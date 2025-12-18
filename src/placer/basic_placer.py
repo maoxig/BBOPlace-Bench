@@ -39,7 +39,7 @@ class BasicPlacer:
         self.metrics_file = os.path.join(args.result_path, "metrics.csv")
         with open(self.metrics_file, 'a', newline='') as f:
             writer = csv.writer(f)
-            header = ["n_eval"] + [f"{prefix}_{metric}" for prefix in ["current", "his_best", "pop_best", "pop_avg", "pop_std"] for metric in self.eval_metrics] + \
+            header = ["n_eval"] + [f"{prefix}_{metric}" for prefix in ["his_best", "pop_best", "pop_avg", "pop_std"] for metric in self.eval_metrics] + \
                         ["t_each_eval", "avg_t_each_eval", "avg_t_algo_optimization", "avg_t_eval_solution"]
             writer.writerow(header)
         

@@ -14,6 +14,11 @@ REGISTRY["sampling"] = {
         'random' : sampling.GrideGuideRandomSampling,
         "spiral" : sampling.GrideGuideSpiralSampling,
     },
+    "vmgo" : {
+        "single_random": sampling.GrideGuideSingleRandomSampling,
+        'random' : sampling.GrideGuideRandomSampling,
+        "spiral" : sampling.GrideGuideSpiralSampling,
+    },
     "sp" : {
         "random" : sampling.SPRandomSampling,
     },
@@ -24,6 +29,14 @@ REGISTRY["sampling"] = {
 
 REGISTRY["mutation"] = {
     "mgo" : {
+        "dummy" : mutation.DummyMutation,
+        "swap" : mutation.MaskGuidedOptimizationSwapMutation,
+        "shift" : mutation.MaskGuidedOptimizationShiftMutation,
+        "random_resetting" : mutation.MaskGuidedOptimizationRandomResettingMutation,
+        "shuffle" : mutation.MaskGuidedOptimizationShuffleMutation,
+        "pm": mutation.MaskGuidedOptimizationPMMutation,
+    },
+    "vmgo" : {
         "dummy" : mutation.DummyMutation,
         "swap" : mutation.MaskGuidedOptimizationSwapMutation,
         "shift" : mutation.MaskGuidedOptimizationShiftMutation,
@@ -42,6 +55,11 @@ REGISTRY["mutation"] = {
 
 REGISTRY["crossover"] = {
     "mgo" : {
+        "dummy" : crossover.DummyCrossover,
+        "uniform" : crossover.MaskGuidedOptimizationUniformCrossover,
+        "sbx": crossover.GuidGuideSBXCrossover
+    },
+    "vmgo" : {
         "dummy" : crossover.DummyCrossover,
         "uniform" : crossover.MaskGuidedOptimizationUniformCrossover,
         "sbx": crossover.GuidGuideSBXCrossover

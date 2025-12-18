@@ -5,8 +5,9 @@ REGISTRY = {}
 from .mgo_placer import MaskGuidedOptimizationPlacer
 from .sp_placer import SPPlacer
 from .hpo_placer import HPOPlacer
-
+from .vmgo_placer import VanillaMaskGuidedOptimizationPlacer
 # REGISTRY["grid"] = GridPlacer
 REGISTRY["mgo"] = MaskGuidedOptimizationPlacer
 REGISTRY["sp"] = SPPlacer
 REGISTRY["hpo"] = HPOPlacer
+REGISTRY['vmgo'] =  VanillaMaskGuidedOptimizationPlacer

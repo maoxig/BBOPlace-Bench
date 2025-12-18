@@ -43,6 +43,18 @@ class NSGAII(BasicAlgo):
                 ([args.n_grid_x] * self.node_cnt) + \
                     ([args.n_grid_y] * self.node_cnt)
             )
+        elif args.placer == "vmgo":
+            self.problem = MaskGuidedOptimizationPlacementProblem(
+                n_grid_x=args.n_grid_x,
+                n_grid_y=args.n_grid_y,
+                placer=placer,
+                n_obj=len(self.eval_metrics)
+            )
+            self.xl = np.zeros(self.node_cnt * 2)
+            self.xu = np.array(
+                ([args.n_grid_x] * self.node_cnt) + \
+                    ([args.n_grid_y] * self.node_cnt)
+            )
         elif args.placer == "sp":
             self.xl = np.zeros(self.node_cnt * 2)
             self.xu = np.array([self.node_cnt] * self.node_cnt * 2)
