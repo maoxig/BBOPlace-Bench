@@ -10,8 +10,8 @@ import os
 
 from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 
-from utils.calculate_crowding_distance import calc_crowding_distance
 
+from pymoo.operators.survival.rank_and_crowding.metrics import calc_crowding_distance
 class BasicSampling():
     def __init__(self, args, placer, use_checkpoint=True) -> None:
         self.args = args

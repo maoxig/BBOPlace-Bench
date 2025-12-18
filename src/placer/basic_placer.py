@@ -47,10 +47,12 @@ class BasicPlacer:
         self.figure_saving_lst = []
         self.n_max_saving_placement = args.n_max_saving_placement
 
-        if self.args.eval_gp_hpwl:
+        if 'gp_hpwl' in self.eval_metrics or args.eval_gp_hpwl:
             from gp_evaluator import GPEvaluator
             self.gp_evaluator = GPEvaluator(args=args,
                                             placedb=placedb)
+        else:
+            self.gp_evaluator = None
             
         self.t_eval_solution_total = 0
 
@@ -61,6 +63,7 @@ class BasicPlacer:
             placedb=self.placedb,
             macros_pos=macro_pos,
             eval_metrics=self.eval_metrics,
+            gp_evaluator=self.gp_evaluator  
         )
         
         # t_eval_solution = time.time() - t

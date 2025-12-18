@@ -24,13 +24,6 @@ class NSGAII(BasicAlgo):
         super(NSGAII, self).__init__(args=args, placer=placer, logger=logger)
         self.node_cnt = placer.placedb.node_cnt
         self.eval_metrics = placer.eval_metrics
-
-        self.problem = MaskGuidedOptimizationPlacementProblem(
-                n_grid_x=args.n_grid_x,
-                n_grid_y=args.n_grid_y,
-                placer=placer,
-                n_obj=len(self.eval_metrics)
-            )
         if args.placer == "mgo":
             self.problem = MaskGuidedOptimizationPlacementProblem(
                 n_grid_x=args.n_grid_x,
@@ -59,7 +52,8 @@ class NSGAII(BasicAlgo):
             self.xl = np.zeros(self.node_cnt * 2)
             self.xu = np.array([self.node_cnt] * self.node_cnt * 2)
             self.problem = SequencePairPlacementProblem(
-                placer=placer
+                placer=placer,
+                n_obj=len(self.eval_metrics)
             )
         elif args.placer == "hpo":
             extract = lambda ent_i: \
@@ -69,8 +63,10 @@ class NSGAII(BasicAlgo):
             self.problem = HyperparameterPlacementProblem(
                 params_space=params_space,
                 placer=placer,
+                n_obj=len(self.eval_metrics)
             )
         else:
+            self.problem = None
             raise NotImplementedError
         
         self.args.__dict__.update(

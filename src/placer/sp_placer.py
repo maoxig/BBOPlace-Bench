@@ -6,8 +6,8 @@ from .basic_placer import BasicPlacer
 from src.utils.debug import *
 
 class SPPlacer(BasicPlacer):
-    def __init__(self, args, placedb) -> None:
-        super(SPPlacer, self).__init__(args=args, placedb=placedb)
+    def __init__(self, args, placedb,  eval_metrics= ['hpwl']) -> None:
+        super(SPPlacer, self).__init__(args=args, placedb=placedb, eval_metrics= eval_metrics)
 
         self.node_cnt = placedb.node_cnt
 

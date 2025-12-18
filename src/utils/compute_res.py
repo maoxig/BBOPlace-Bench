@@ -4,7 +4,7 @@ from src.utils.debug import *
 import numpy as np
 
 
-def comp_res(macros_pos, placedb, eval_metrics=['hpwl']):
+def comp_res(macros_pos, placedb, eval_metrics=['hpwl'], gp_evaluator = None):
     if len(macros_pos) == 0:
         print("Warning: No macro placed, return INF for all results")
         return {metric: INF for metric in eval_metrics}
@@ -17,6 +17,13 @@ def comp_res(macros_pos, placedb, eval_metrics=['hpwl']):
             res['congestion'] = _comp_res_congestion(net_hpwl, placedb)
         elif metric == 'regularity':
             res['regularity'] = _comp_res_regularity(macros_pos, placedb)
+        elif metric == 'overlap':
+            res['overlap'] = comp_overlap(macros_pos, placedb)
+        elif metric == 'gp_hpwl' and gp_evaluator is not None:
+            res['gp_hpwl'] = gp_evaluator.evaluate(macros_pos)
+        elif metric == 'dataflow_cost':
+            # to be implemented
+            pass
         else:
             raise ValueError(f"Unsupported metric: {metric}")
     return res

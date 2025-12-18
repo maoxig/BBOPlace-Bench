@@ -5,7 +5,7 @@ from .bo.bo import BO
 from .sa.sa import SA
 from .ea.es import ES
 from .ea.pso import PSO
-from .ea.nsgaii import NSGAII
+from .mo.nsgaii import NSGAII
 
 REGISTRY["ea"] = VanillaEA
 REGISTRY["bo"] = BO
