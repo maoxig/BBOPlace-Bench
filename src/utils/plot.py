@@ -10,10 +10,14 @@ sys.path.append(ROOT_DIR)
 sys.path.append(THIRDPARTY_DIR)
 sys.path.append(SOURCE_DIR)
 os.environ["PYTHONPATH"] = ":".join(sys.path)
-
-from thirdparty.dreamplace.Params import Params as DMPParams
-from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
-from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
+try:
+    from thirdparty.dreamplace.Params import Params as DMPParams
+    from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
+    from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
+except ImportError as e:
+    DMPParams = None
+    DMPPlaceDB = None
+    NonLinearPlace = None
 from PIL import Image
 
 from utils.debug import *

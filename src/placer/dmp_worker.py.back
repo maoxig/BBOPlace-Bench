@@ -8,12 +8,18 @@ import signal
 import time
 import threading
 import psutil
-import thirdparty.dreamplace.ops.place_io.place_io as place_io
+try:
+    import thirdparty.dreamplace.ops.place_io.place_io as place_io
 
-from thirdparty.dreamplace.Params import Params as DMPParams
-from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
-from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
-
+    from thirdparty.dreamplace.Params import Params as DMPParams
+    from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
+    from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
+except ImportError as e:
+    place_io = None
+    DMPParams = None
+    DMPPlaceDB = None
+    NonLinearPlace = None
+    
 from src.utils.debug import *
 
 

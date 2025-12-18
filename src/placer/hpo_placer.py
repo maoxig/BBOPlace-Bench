@@ -1,47 +1,35 @@
-from .basic_placer import BasicPlacer
-from src.utils.constant import EPS
-from thirdparty.dreamplace.Params import Params as DMPParams
-from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
-from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
-from typing import Dict, Union
-import torch as th
-import numpy as np
-import math
-import os
-import socket
-import signal
-import time
-import tempfile
-import json
-import subprocess
-import multiprocessing as mp
-import select
+"""
+重构后的 HPOPlacer - 使用进程池并行优化超参数
+"""
 
-from src.utils.signal_handler import abort_signal_handler, timeout_handler, AbortSignalException
-from src.utils.debug import *
+import os
+import math
+from typing import Dict, Union, List
+from src.utils.constant import EPS
+from dmp_worker_pool import DMPWorkerPool
+
+try:
+    from thirdparty.dreamplace.Params import Params as DMPParams
+except ImportError:
+    DMPParams = None
 
 Numeric = Union[int, float]
 
+# 参数转换函数
 orig_func = lambda x: x
 round_func = lambda x: round(x)
 sel_func = lambda options: lambda x: options[math.trunc(x) % len(options)]
 
+# 超参数搜索空间
 params_space = {
-###################################################################################
-# format:
-#   param_tag: (lower_bound, upper_bound, transform_func),
-# example:
-#   "density_weight": (1e-06, 1.0, orig_func)
-###################################################################################
-
-# categorical
+    # 分类参数
     "GP_num_bins_x": (0, 2, sel_func([1024, 2048])),
     "GP_num_bins_y": (0, 2, sel_func([1024, 2048])),
     "GP_optimizer": (0, 2, sel_func(["adam", "nesterov"])),
     "GP_wirelength": (0, 2, sel_func(["weighted_average", "logsumexp"])),
     "GP_iteration": (0, 1, sel_func([1000])),
 
-# uniform
+    # 连续参数
     "GP_Llambda_density_weight_iteration": (1, 3, round_func),
     "GP_Lsub_iteration": (1, 3, round_func),
     "GP_learning_rate": (0.001, 0.01, orig_func),
@@ -53,12 +41,13 @@ params_space = {
     "gamma": (1, 4, orig_func),
     "stop_overflow": (0.06, 0.1, orig_func),
     "target_density": (0.8, 1.2, orig_func),
-
 }
 
-class HPOPlacer(BasicPlacer):
+
+class HPOPlacer:
+    """超参数优化 Placer - 使用进程池"""
+    
     DMP_CONFIG_PATH = "config/algorithm/dmp_config"
-    DMP_TEMP_BENCHMARK_PATH = "benchmarks/.tmp/HPO"
     DMP_RESULT_DIR = os.path.join(
         "results",
         "%(name)s",
@@ -66,343 +55,206 @@ class HPOPlacer(BasicPlacer):
         "%(unique_token)s",
         "dmp_results"
     )
-    SOCK_PATH = os.path.join(
-        "sock_path",
-        "dmp_worker_HPO_%(unique_token)s.sock"
-    )
-    AUX_FILES = [
-        "%(benchmark)s.aux",
-        "%(benchmark)s.scl",
-        "%(benchmark)s.wts",
-        "%(benchmark)s.nets",
-        "%(benchmark)s.nodes"
-    ]
-    DEF_FILES = [
-        "%(benchmark)s.lef",
-        "%(benchmark)s.v",
-        "%(benchmark)s.sdc",
-        "%(benchmark)s_Early.lib",
-        "%(benchmark)s_Late.lib"
-    ]
 
-    def __init__(self, args, placedb):
-        super(HPOPlacer, self).__init__(args, placedb)
+    def __init__(self, 
+                 args, 
+                 placedb,
+                 n_workers: int = 4):
+        """
+        初始化 HPO Placer
+        
+        Args:
+            args: 参数对象
+            placedb: 布局数据库
+            n_workers: worker 进程数量
+        """
         self.args = args
         self.placedb = placedb
-
-        self._worker = None
-        self._sock = None
-        self._sock_path = None
-        self._worker_inited = False
-        self.worker_path = os.path.join(self.args.SOURCE_DIR, "placer/dmp_worker.py")
+        self.n_workers = n_workers
         
+        # 加载 DMP 配置
         self.params = DMPParams()
         self._load_dmp_config()
-        self._prepare_benchmark()
-
-        self.timeout_seconds = args.timeout_seconds
-
-        self._sock_path = os.path.join(self.args.ROOT_DIR, HPOPlacer.SOCK_PATH % self.args.__dict__)
-        os.makedirs(os.path.dirname(self._sock_path), exist_ok=True)
-
+        
+        # 初始化进程池
+        worker_path = os.path.join(self.args.SOURCE_DIR, "placer/dmp_worker.py")
+        self.worker_pool = DMPWorkerPool(
+            n_workers=n_workers,
+            args=args,
+            placedb=placedb,
+            worker_path=worker_path,
+            timeout_seconds=args.timeout_seconds
+        )
 
     @property
-    def param_dims(self):
+    def param_dims(self) -> int:
+        """参数维度"""
         return len(params_space.items())
 
     @property
-    def _result_dir(self):
+    def _result_dir(self) -> str:
+        """结果目录"""
         ROOT_DIR = self.args.ROOT_DIR
         return os.path.join(
             ROOT_DIR,
-            HPOPlacer.DMP_RESULT_DIR % self.args.__dict__
+            self.DMP_RESULT_DIR % self.args.__dict__
         )
-
-    @property
-    def _orig_benchmark_path(self):
-        ROOT_DIR = self.args.ROOT_DIR
-        return os.path.join(
-            ROOT_DIR,
-            self.args.benchmark_path
-        )
-
-    @property
-    def _temp_benchmark_path(self):
-        ROOT_DIR = self.args.ROOT_DIR
-        return os.path.join(
-            ROOT_DIR,
-            HPOPlacer.DMP_TEMP_BENCHMARK_PATH,
-            "%(benchmark)s_%(unique_token)s" % self.args.__dict__
-        )
-
-    def _link_files(self, files):
-        for file_name in files:
-            orig = os.path.join(
-                self._orig_benchmark_path,
-                file_name % self.args.__dict__)
-
-            if not os.path.exists(orig):
-                continue
-
-            link = os.path.join(
-                self._temp_benchmark_path,
-                file_name % self.args.__dict__)
-            
-            os.system(f"ln -sfr {orig} {link}")
-
-
-    def _prepare_benchmark_aux(self):
-        os.makedirs(self._temp_benchmark_path, exist_ok=True)
-        self._link_files(HPOPlacer.AUX_FILES)
-        
-        # prepare .pl
-        pl_file_path = os.path.join(
-            self._temp_benchmark_path,
-            "%(benchmark)s.pl" % self.args.__dict__
-        )
-        with open(pl_file_path, "w") as pl_file:
-            pl_file.write(self.placedb.to_pl(fix_macro=False))
-
-        suffix2path = \
-            lambda suffix: os.path.join(
-                self._temp_benchmark_path,
-                "%(benchmark)s" % self.args.__dict__
-            ) + suffix
-        self.params.fromJson(
-            {
-                "aux_input": suffix2path(".aux")
-            }
-        )
-        
-
-    def _prepare_benchmark_def(self):
-        os.makedirs(self._temp_benchmark_path, exist_ok=True)
-        self._link_files(HPOPlacer.DEF_FILES)
-        
-        # prepare .def
-        def_file_path = os.path.join(
-            self._temp_benchmark_path,
-            "%(benchmark)s.def" % self.args.__dict__
-        )
-        with open(def_file_path, "w") as def_file:
-            def_file.write(self.placedb.to_def(fix_macro=False))
-
-        suffix2path = \
-            lambda suffix: os.path.join(
-                self._temp_benchmark_path,
-                "%(benchmark)s" % self.args.__dict__
-            ) + suffix
-        self.params.fromJson(
-            {
-                "def_input": suffix2path(".def"),
-                "lef_input": suffix2path(".lef"),
-                "verilog_input": suffix2path(".v"),
-                "early_lib_input": suffix2path("_Early.lib"),
-                "late_lib_input": suffix2path("_Late.lib"),
-                "sdc_input": suffix2path(".sdc")
-            }
-        )
-
-
-    def _prepare_benchmark(self):
-        type_mapping = {
-            "aux": self._prepare_benchmark_aux,
-            "def": self._prepare_benchmark_def,
-        }
-        if self.args.benchmark_type in type_mapping:
-            type_mapping[self.args.benchmark_type]()
-        else:
-            raise NotImplementedError
-
 
     def _load_dmp_config(self):
+        """加载 DREAMPlace 配置"""
         ROOT_DIR = self.args.ROOT_DIR
         json_file = f"{self.args.benchmark}.json"
         json_path = os.path.join(
             ROOT_DIR,
-            HPOPlacer.DMP_CONFIG_PATH,
+            self.DMP_CONFIG_PATH,
             json_file
         )
         self.params.load(json_path)
-        
 
-    def _load_genotype(self, x):
+    def _load_genotype(self, x: Dict[str, Numeric]) -> Dict:
+        """
+        加载基因型（超参数）并转换为 DMP 参数
+        
+        Args:
+            x: 超参数字典
+            
+        Returns:
+            DMP 参数更新字典
+        """
         params_to_update = {}
+        
         for param_name, value in x.items():
-            print(param_name, value)
             lb, ub, tf = params_space[param_name]
             assert lb - EPS < value < ub + EPS, \
                 f"Parameter {param_name} (={value}) is out of bound [{lb}, {ub}]."
+            
             param_value = tf(value)
+            
             if param_name.startswith("GP_"):
+                # Global placement 阶段参数
                 params_to_update.setdefault("global_place_stages", [{}])
                 subject = params_to_update["global_place_stages"][0]
                 entry_name = param_name.lstrip("GP_")
             else:
+                # 其他参数
                 subject = params_to_update
                 entry_name = param_name
-            subject[entry_name] = param_value
-
-        self.params.fromJson(params_to_update)
-
-
-    def _genotype2phenotype(self, x):
-        params_name = list(params_space.keys())
-        x = dict(tuple(zip(params_name, list(x))))
-        self._load_genotype(x)
-        
-        if not self._ensure_worker():
-            return {}
-
-        # place request
-        req = {
-            "cmd": "place",
-            "params_update": {},
-            "macro_lst": self.placedb.macro_lst,
-        }
-        deadline = time.time() + self.timeout_seconds
-        try:
-            self._sock.sendall((json.dumps(req) + "\n").encode())
-            remaining = deadline - time.time()
-            if remaining <= 0:
-                self._cleanup_worker()
-                return {}
-            r, _, _ = select.select([self._sock], [], [], remaining)
-            if not r:
-                self._cleanup_worker()
-                return {}
             
-            data = b""
-            while True:
-                remaining = deadline - time.time()
-                if remaining <= 0:
-                    self._cleanup_worker()
-                    return {}
-                    
-                chunk = self._sock.recv(65536)
-                if not chunk:
-                    break
-                data += chunk
-                if b"\n" in chunk:
-                    break
-            text = data.decode(errors="ignore")
-            lines = [ln for ln in text.splitlines() if ln.strip()]
-            last_line = lines[-1] if lines else ""
-            out = json.loads(last_line) if last_line else {"ok": False}
-        except:
-            self._cleanup_worker()
-            return {}
+            subject[entry_name] = param_value
+        
+        return params_to_update
 
-        if isinstance(out, dict) and out.get("ok") and \
-           isinstance(out.get("macro_pos"), dict):
-            macro_pos = out["macro_pos"]
-            for k, v in list(macro_pos.items()):
-                try:
-                    macro_pos[k] = (v[0], v[1])
-                except:
-                    macro_pos[k] = tuple(v)
-            return macro_pos
-        else:
-            self._cleanup_worker()
+    def _genotype2phenotype(self, x: Union[List, Dict]) -> Dict[str, tuple]:
+        """
+        将基因型转换为表现型（宏单元位置）
+        
+        Args:
+            x: 超参数（列表或字典）
+            
+        Returns:
+            宏单元位置字典 {name: (x, y)} 或空字典（失败）
+        """
+        # 将列表转换为字典
+        if isinstance(x, (list, tuple)):
+            params_name = list(params_space.keys())
+            x = dict(zip(params_name, x))
+        
+        # 加载参数
+        params_update = self._load_genotype(x)
+        
+        # 通过进程池执行布局
+        macro_pos = self.worker_pool.place(
+            params_update=params_update,
+            macro_lst=self.placedb.macro_lst
+        )
+        
+        if macro_pos is None:
             return {}
-
-    def _cleanup_worker(self):
-        if self._sock is not None:
-            self._sock.close()
-            self._sock = None
-        if self._worker is not None:
+        
+        # 转换格式
+        for k, v in list(macro_pos.items()):
             try:
-                self._worker.terminate()
-                try:
-                    self._worker.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(os.getpgid(self._worker.pid), signal.SIGKILL)
-                    self._worker.wait()
-            except Exception as e:
-                pass
-            finally:
-                self._worker = None
-        if self._sock_path is not None and os.path.exists(self._sock_path):
-            os.unlink(self._sock_path)
-        self._worker_inited = False
+                macro_pos[k] = (v[0], v[1])
+            except:
+                macro_pos[k] = tuple(v)
+        
+        return macro_pos
 
-    def _ensure_worker(self):
-        if self._worker is not None and \
-           self._worker.poll() is None and \
-           self._sock is not None:
-            return True
+    def optimize_batch(self, genotypes: List) -> List[Dict]:
+        """
+        批量优化（并行）
         
-        if os.path.exists(self._sock_path):
-            os.unlink(self._sock_path)
-        
-        # init worker
-        try:
-            self._worker = subprocess.Popen(
-                ["python3", self.worker_path, "--sock", self._sock_path],
-                stdin=None,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                text=False,
-                cwd=self.args.ROOT_DIR,
-                preexec_fn=os.setsid  
+        Args:
+            genotypes: 超参数列表
+            
+        Returns:
+            宏单元位置列表
+        """
+        # 并行提交所有任务
+        futures = []
+        for genotype in genotypes:
+            # 将列表转换为字典
+            if isinstance(genotype, (list, tuple)):
+                params_name = list(params_space.keys())
+                genotype = dict(zip(params_name, genotype))
+            
+            params_update = self._load_genotype(genotype)
+            future = self.worker_pool.submit_place(
+                params_update=params_update,
+                macro_lst=self.placedb.macro_lst
             )
-        except Exception:
-            self._cleanup_worker()
-            return False
-
-        # init sock
-        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        deadline = time.time() + min(10, self.timeout_seconds)
-        connected = False
-        while time.time() < deadline:
+            futures.append(future)
+        
+        # 收集结果
+        results = []
+        for future in futures:
             try:
-                self._sock.connect(self._sock_path)
-                connected = True
-                break
-            except Exception:
-                time.sleep(0.05)
-        if not connected:
-            self._cleanup_worker()
-            return False
-        self._sock.settimeout(self.timeout_seconds)
-
-        # init worker
-        init_msg = json.dumps({
-            "cmd": "init",
-            "args": {
-                "ROOT_DIR": self.args.ROOT_DIR,
-                "temp_subdir": "HPO",
-                "name": self.args.placer if not hasattr(self.args, "name") else self.args.name,
-                "benchmark": self.args.benchmark,
-                "benchmark_type": self.args.benchmark_type,
-                "unique_token": self.args.unique_token,
-                "seed": self.args.seed,
-            },
-            "canvas_width": self.placedb.canvas_width,
-            "canvas_height": self.placedb.canvas_height,
-        }) + "\n"
-        try:
-            self._sock.sendall(init_msg.encode())
-            data = b""
-            while True:
-                chunk = self._sock.recv(65536)
-                if not chunk:
-                    break
-                data += chunk
-                if b"\n" in chunk:
-                    break
-            line = data.decode(errors="ignore").strip()
-            ack_obj = json.loads(line) if line else {"ok": False}
-        except:
-            self._cleanup_worker()
-            return False
-        if not ack_obj.get("ok"):
-            self._cleanup_worker()
-            return False
-        self._worker_inited = True
-        return True
+                macro_pos = future.result(timeout=self.args.timeout_seconds)
+                if macro_pos:
+                    # 转换格式
+                    for k, v in list(macro_pos.items()):
+                        try:
+                            macro_pos[k] = (v[0], v[1])
+                        except:
+                            macro_pos[k] = tuple(v)
+                    results.append(macro_pos)
+                else:
+                    results.append({})
+            except Exception as e:
+                print(f"Batch optimization error: {e}")
+                results.append({})
+        
+        return results
 
     def __deepcopy__(self, memo=None):
+        """防止深拷贝"""
         return self
     
+    def __del__(self):
+        """析构函数 - 清理资源"""
+        if hasattr(self, 'worker_pool'):
+            self.worker_pool.shutdown()
+
+
+# 使用示例
+if __name__ == "__main__":
+    # 创建 HPO Placer（8个并行 worker）
     
+    placer = HPOPlacer(args, placedb, n_workers=8)
+    
+    # 单个参数配置优化
+    genotype = [1.5, 2.0, 0.005, 0.995, 0.95, 1.1, 300000, 5e-5, 2.5, 0.08, 1.0]
+    macro_pos = placer._genotype2phenotype(genotype)
+    print(f"Macro positions: {macro_pos}")
+    
+    # 批量并行优化
+    genotypes = [
+        [1.5, 2.0, 0.005, 0.995, 0.95, 1.1, 300000, 5e-5, 2.5, 0.08, 1.0],
+        [2.0, 2.5, 0.006, 0.990, 0.93, 1.12, 350000, 6e-5, 3.0, 0.07, 1.1],
+        [1.0, 1.5, 0.004, 0.998, 0.97, 1.08, 280000, 4e-5, 2.0, 0.09, 0.9],
+    ]
+    results = placer.optimize_batch(genotypes)
+    print(f"Batch results: {len(results)} configurations")
+    
+    # 清理
+    del placer
