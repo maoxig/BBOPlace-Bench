@@ -9,8 +9,8 @@ tkwargs = {
 }
 
 class AcquisitionFuncProblem(Problem):
-    def __init__(self, n_var, xl, xu, acqf):
-        super().__init__(n_var=n_var, xl=xl, xu=xu, n_obj=1)
+    def __init__(self, n_var, xl, xu, acqf, n_obj=1):
+        super().__init__(n_var=n_var, xl=xl, xu=xu, n_obj=n_obj)
         self.acqf = acqf 
     
     def _evaluate(self, x, out, *args, **kwargs):
@@ -23,7 +23,7 @@ class AcquisitionFuncProblem(Problem):
         torch.cuda.empty_cache()
 
 class MaskGuidedOptimizationAcquisitionFuncProblem(AcquisitionFuncProblem):
-    def __init__(self, n_grid_x, n_grid_y, node_cnt, acqf):
+    def __init__(self, n_grid_x, n_grid_y, node_cnt, acqf, n_obj=1):
         self.n_grid_x = n_grid_x
         self.n_grid_y = n_grid_y
         self.node_cnt = node_cnt
@@ -34,21 +34,23 @@ class MaskGuidedOptimizationAcquisitionFuncProblem(AcquisitionFuncProblem):
                 ([self.n_grid_x] * self.node_cnt) + \
                     ([self.n_grid_y] * self.node_cnt)
             ),
+            n_obj=n_obj,
             acqf=acqf
         )
         
 class SequencePairAcquisitionFuncProblem(AcquisitionFuncProblem):
-    def __init__(self, node_cnt, acqf):
+    def __init__(self, node_cnt, acqf, n_obj=1):
         self.node_cnt = node_cnt
         super().__init__(
             n_var=self.node_cnt * 2,
             xl=np.zeros(self.node_cnt * 2),
             xu=np.array([self.node_cnt] * self.node_cnt * 2),
-            acqf=acqf
+            acqf=acqf,
+            n_obj=n_obj
         )
 
 class HyperparameterAcquisitionFuncProblem(AcquisitionFuncProblem):
-    def __init__(self, params_space, acqf):
+    def __init__(self, params_space, acqf, n_obj=1):
         self.params_space = params_space
         n_var = len(self.params_space.keys())
 
@@ -63,4 +65,5 @@ class HyperparameterAcquisitionFuncProblem(AcquisitionFuncProblem):
             xl=self.xl,
             xu=self.xu,
             acqf=acqf,
+            n_obj=n_obj
         )

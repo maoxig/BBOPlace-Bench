@@ -1,6 +1,8 @@
 from abc import abstractmethod
+
+import numpy as np
 from src.utils.debug import *
-from src.utils.compute_res import comp_res, comp_overlap
+from src.utils.compute_res import comp_res
 from src.utils.read_benchmark.read_aux import write_pl
 from src.utils.read_benchmark.read_def import write_def
 from src.utils.constant import get_n_power
@@ -21,9 +23,10 @@ def evaluate_placer(placer, x0):
     return placer._evaluate(x0)
 
 class BasicPlacer:
-    def __init__(self, args, placedb) -> None:
+    def __init__(self, args, placedb, eval_metrics= ["hpwl"]) -> None:
         self.args = args
         self.placedb = placedb
+        self.eval_metrics = eval_metrics
 
         self.canvas_width  = placedb.canvas_width
         self.canvas_height = placedb.canvas_height
@@ -36,18 +39,8 @@ class BasicPlacer:
         self.metrics_file = os.path.join(args.result_path, "metrics.csv")
         with open(self.metrics_file, 'a', newline='') as f:
             writer = csv.writer(f)
-            header = [
-                "n_eval", 
-                "his_best_hpwl", 
-                "pop_best_hpwl", 
-                "pop_avg_hpwl", 
-                "pop_std_hpwl", 
-                "overlap_rate", 
-                "t_each_eval", 
-                "avg_t_each_eval",
-                "avg_t_algo_optimization",
-                "avg_t_eval_solution"
-            ]
+            header = ["n_eval"] + [f"{prefix}_{metric}" for prefix in ["current", "his_best", "pop_best", "pop_avg", "pop_std"] for metric in self.eval_metrics] + \
+                        ["t_each_eval", "avg_t_each_eval", "avg_t_algo_optimization", "avg_t_eval_solution"]
             writer.writerow(header)
         
         self.placement_saving_lst = []
@@ -64,13 +57,14 @@ class BasicPlacer:
     def _evaluate(self, x):
         # t = time.time()
         macro_pos = self._genotype2phenotype(x)
-        if self.args.eval_gp_hpwl:
-            hpwl = self.gp_evaluator.evaluate(macro_pos=macro_pos)
-        else:
-            hpwl = comp_res(macro_pos=macro_pos, placedb=self.placedb)
-        overlap_rate = comp_overlap(macro_pos=macro_pos, placedb=self.placedb)
+        res = comp_res(
+            placedb=self.placedb,
+            macros_pos=macro_pos,
+            eval_metrics=self.eval_metrics,
+        )
+        
         # t_eval_solution = time.time() - t
-        return hpwl, overlap_rate, macro_pos
+        return res, macro_pos
     
     
     def evaluate(self, x):
@@ -79,20 +73,22 @@ class BasicPlacer:
             not self.args.eval_gp_hpwl and \
             self.args.placer != "hpo":
             futures = [evaluate_placer.remote(self, x0) for x0 in x]
-            results = ray.get(futures)
+            results_and_positions = ray.get(futures)
+            results = [res[0] for res in results_and_positions]
+            macro_pos = [res[1] for res in results_and_positions]
         else:
-            results = [self._evaluate(x0) for x0 in x]
+            results_and_positions = [self._evaluate(x0) for x0 in x]
+            results = [res[0] for res in results_and_positions]
+            macro_pos = [res[1] for res in results_and_positions]
         t_eval_solution = time.time() - t
-        
-        hpwl_all = []
-        overlap_rate_all = []
-        macro_pos_all = []
-        for hpwl, overlap_rate, macro_pos in results:
-            hpwl_all.append(hpwl)
-            overlap_rate_all.append(overlap_rate)
-            macro_pos_all.append(macro_pos)
         self.t_eval_solution_total += t_eval_solution
-        return hpwl_all, overlap_rate_all, macro_pos_all
+
+        res = {}
+        for eval_metric in self.eval_metrics:
+            res[eval_metric] = np.array([result[eval_metric] for result in results])
+        return res, macro_pos
+
+
 
     def save_placement(self, macro_pos, n_eval, hpwl):
         logging.info("Placer saving placement")
@@ -169,29 +165,17 @@ class BasicPlacer:
     def save_metrics(
             self, 
             n_eval, 
-            his_best_hpwl, 
-            pop_best_hpwl, 
-            pop_avg_hpwl, 
-            pop_std_hpwl,
-            overlap_rate,
+            his_best_Y, 
+            pop_best_Y, 
+            pop_avg_Y, 
+            pop_std_Y,
             t_each_eval=0,
             avg_t_each_eval=0,
             avg_t_eval_solution=0,
             ):
         with open(self.metrics_file, 'a', newline='') as f:
             writer = csv.writer(f)
-            content = [
-                n_eval, 
-                his_best_hpwl, 
-                pop_best_hpwl, 
-                pop_avg_hpwl, 
-                pop_std_hpwl, 
-                overlap_rate, 
-                t_each_eval, 
-                avg_t_each_eval,
-                avg_t_each_eval - avg_t_eval_solution,
-                avg_t_eval_solution
-            ]
+            content = [n_eval] + [value for Y in [his_best_Y, pop_best_Y, pop_avg_Y, pop_std_Y] for value in Y] + [t_each_eval, avg_t_each_eval, avg_t_each_eval - avg_t_eval_solution, avg_t_eval_solution ]
             writer.writerow(content)
 
     def _save_checkpoint(self, checkpoint_path):

@@ -24,7 +24,8 @@ class ES(BasicAlgo):
         super(ES, self).__init__(args=args, placer=placer, logger=logger)
         self.node_cnt = placer.placedb.node_cnt
         self.best_hpwl = INF 
-        
+        assert len(self.eval_metrics) == 1, self.eval_metrics
+
         if args.placer == "mgo":
             self.problem = MaskGuidedOptimizationPlacementProblem(
                 n_grid_x=args.n_grid_x,
@@ -83,7 +84,6 @@ class ES(BasicAlgo):
         while self.n_eval < self.args.max_evals:
             population = self.cmaes.ask()
             fitness = [] 
-            overlap_rate = []
             macro_pos_all = []
             
             if self.args.placer == "mgo":
@@ -93,7 +93,7 @@ class ES(BasicAlgo):
             elif self.args.placer == "hpo":
                 processed_population = population
 
-            fitness, overlap_rate, macro_pos_all = self.placer.evaluate(processed_population)
+            fitness, macro_pos_all = self.placer.evaluate(processed_population)
             
                 
             t_temp = time.time() 
@@ -104,10 +104,9 @@ class ES(BasicAlgo):
             avg_t_eval_solution = self.placer.t_eval_solution_total / (self.n_eval + self.args.pop_size)
             self.t = t_temp
             
-            self._record_results(np.array(fitness), np.array(overlap_rate), macro_pos_all,
+            self._record_results(fitness, macro_pos_all,
                                 t_each_eval=t_each_eval,
-                                avg_t_each_eval=avg_t_each_eval,
-                                avg_t_eval_solution=avg_t_eval_solution)
+                                avg_t_each_eval=avg_t_each_eval)
             
             self._save_checkpoint() 
                 

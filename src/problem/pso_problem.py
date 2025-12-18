@@ -7,12 +7,12 @@ from utils.debug import *
 
 
 class PlacementProblem(Problem):
-    def __init__(self, n_var, xl, xu, placer):
+    def __init__(self, n_var, xl, xu, placer, n_obj=1):
         super().__init__(
             n_var=n_var,
             xl=xl,
             xu=xu,
-            n_obj=1,
+            n_obj=n_obj,
             vtype=np.int64
         )
         self.n_var = n_var
@@ -34,14 +34,13 @@ class PlacementProblem(Problem):
         
     
     def _evaluate(self, x, out, *args, **kwargs):
-        y, overlap_rate, macro_pos_all = self.placer.evaluate([x])
+        y, macro_pos_all = self.placer.evaluate([x])
             
         out["F"] = np.array(y)
-        out["overlap_rate"] = np.array(overlap_rate)
         out["macro_pos"] = macro_pos_all
     
 class MaskGuidedOptimizationPlacementProblem(PlacementProblem):
-    def __init__(self, n_grid_x, n_grid_y, placer):
+    def __init__(self, n_grid_x, n_grid_y, placer, n_obj=1):
         self.node_cnt = placer.placedb.node_cnt
         self.n_grid_x = n_grid_x
         self.n_grid_y = n_grid_y
@@ -52,21 +51,23 @@ class MaskGuidedOptimizationPlacementProblem(PlacementProblem):
                 ([self.n_grid_x] * self.node_cnt) + \
                 ([self.n_grid_y] * self.node_cnt)
             ),
+            n_obj=n_obj,
             placer=placer
         )
 
 class SequencePairPlacementProblem(PlacementProblem):
-    def __init__(self, placer):
+    def __init__(self, placer, n_obj=1):
         self.node_cnt = placer.placedb.node_cnt
         super().__init__(
             n_var=self.node_cnt * 2,
             xl=np.zeros(self.node_cnt * 2),
             xu=np.array([self.node_cnt] * self.node_cnt * 2),
+            n_obj=n_obj,
             placer=placer
         )
 
 class HyperparameterPlacementProblem(PlacementProblem):
-    def __init__(self, params_space, placer):
+    def __init__(self, params_space, placer, n_obj=1):
         self.params_space = params_space
         self.n_var = len(self.params_space.keys())
 
@@ -80,5 +81,6 @@ class HyperparameterPlacementProblem(PlacementProblem):
             n_var=self.n_var,
             xl=self.xl,
             xu=self.xu,
-            placer=placer
+            placer=placer,
+            n_obj=n_obj
         )

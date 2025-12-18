@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(".."))
 from config.benchmark import ROOT_DIR, BENCHMARK_DIR, benchmark_dict, benchmark_type_dict, benchmark_path_dict
 THIRDPARTY_DIR = os.path.join(ROOT_DIR, "thirdparty")
 SOURCE_DIR = os.path.join(ROOT_DIR, "src")
+DREAMPLACE_DIR = os.path.join(THIRDPARTY_DIR, "dreamplace")
 
 from types import SimpleNamespace
 from logger import Logger
@@ -21,6 +22,7 @@ sys.path.append(ROOT_DIR)
 sys.path.append(THIRDPARTY_DIR)
 sys.path.append(SOURCE_DIR)
 sys.path.append(BENCHMARK_DIR)
+sys.path.append(DREAMPLACE_DIR)
 
 os.environ["PYTHONPATH"] = ":".join(sys.path)
 
@@ -128,7 +130,7 @@ def single_run(args):
 
     logger = Logger(args=args)
     placedb = PlaceDB(args=args)
-    placer = PLACER_REGISTRY[args.placer](args=args, placedb=placedb)
+    placer = PLACER_REGISTRY[args.placer](args=args, placedb=placedb, eval_metrics= args.eval_metrics) 
     runner = ALGO_REGISTRY[args.algorithm](args=args, placer=placer, logger=logger)
     runner.run()
     logging.info("Exit single run")

@@ -8,29 +8,66 @@ import math
 import ray 
 import os 
 
+from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
+
+from utils.calculate_crowding_distance import calc_crowding_distance
 
 class BasicSampling():
     def __init__(self, args, placer, use_checkpoint=True) -> None:
         self.args = args
         self.placer = placer
-    
+        self.eval_metrics = args.eval_metrics
+        self.n_repeat = self.args.n_sampling_repeat
+        self.record_func = args.record_func
     def _do(self, problem, n_samples, **kwargs):
-        n_repeat = self.args.n_sampling_repeat
+        
         # n_solution_in_memory = max(n_samples, self.args.n_solution_in_memory)
         # n_solution_in_memory = min(n_samples * n_repeat, n_solution_in_memory)
         # n_iter = math.ceil(n_samples * n_repeat / n_solution_in_memory)
 
-        X, y_all, overlap_rate, macro_pos_all = self._sampling_do(problem=problem,
-                                                n_samples=n_samples * n_repeat,
+        X, y, macro_pos = self._sampling_do(problem=problem,
+                                                n_samples=n_samples * self.n_repeat,
                                                 kwargs=kwargs)
-        sorted_indices = np.argsort(y_all)
-        if n_repeat > 1:
-            self.args.record_func(
-                hpwl=y_all[sorted_indices[n_samples:]], 
-                overlap_rate=overlap_rate[sorted_indices[n_samples:]],
-                macro_pos_all=list(np.array(macro_pos_all)[sorted_indices[n_samples:]])
+        
+        Y = np.column_stack(
+                [y[metric] for metric in self.eval_metrics],
+            )
+        
+        nds = NonDominatedSorting()
+        fronts = nds.do(Y)
+
+        selected_indices = []
+        front_idx = 0
+
+        while len(selected_indices) < n_samples and front_idx < len(fronts):
+            current_front = fronts[front_idx]
+
+            if len(selected_indices) + len(current_front) <= n_samples:
+                selected_indices.extend(current_front)
+            else:
+                remaining = n_samples - len(selected_indices)
+
+                crowding_dist = calc_crowding_distance(Y[current_front])
+
+                selected_from_front = current_front[
+                    np.argsort(-crowding_dist)[:remaining]
+                ]
+                selected_indices.extend(selected_from_front)
+
+            front_idx += 1
+
+        selected_indices = np.array(selected_indices)
+        remaining = ~np.isin(np.arange(X.shape[0]), selected_indices)
+        assert np.sum(remaining) == (self.n_repeat - 1) * n_samples
+        
+        if self.n_repeat > 1:
+            self.record_func(
+                Y=Y[remaining], 
+                macro_pos_all=list(np.array(macro_pos)[remaining])
             ) 
-        return X[sorted_indices[:n_samples]]
+
+        X = X[selected_indices]
+        return X
 
         # X, Y = None, None
         # macro_pos_all = []
@@ -100,10 +137,8 @@ class GrideGuideRandomSampling(BasicSampling, IntegerRandomSampling):
     
     def _sampling_do(self, problem, n_samples, **kwargs):
         x = IntegerRandomSampling._do(self, problem, n_samples, **kwargs)
-        y, overlap_rate, macro_pos = self.placer.evaluate(x)
-        y = np.array(y)
-        overlap_rate = np.array(overlap_rate)
-        return x, y, overlap_rate, macro_pos
+        y, macro_pos = self.placer.evaluate(x)
+        return x, y, macro_pos
 
     
 class GrideGuideSpiralSampling(BasicSampling, Sampling):
@@ -192,11 +227,10 @@ class GrideGuideSpiralSampling(BasicSampling, Sampling):
             X[0, i], X[0, i + node_cnt] = pos_x, pos_y
         
         
-        y, overlap_rate, macro_pos = self.placer.evaluate(X)
+        y, macro_pos = self.placer.evaluate(X)
         
         y = np.array(y)
-        overlap_rate = np.array([overlap_rate[0]])
-        return X, y, overlap_rate, macro_pos
+        return X, y, macro_pos
 
 
 ###################################################################
@@ -231,10 +265,8 @@ class SPRandomSampling(BasicSampling, _SPRandomSampling):
     
     def _sampling_do(self, problem, n_samples, **kwargs):
         x = _SPRandomSampling._do(self, problem, n_samples, **kwargs)
-        y, overlap_rate, macro_pos = self.placer.evaluate(x)
-        y = np.array(y)    
-        overlap_rate = np.array(overlap_rate) 
-        return x, y, overlap_rate, macro_pos
+        y, macro_pos = self.placer.evaluate(x)
+        return x, y, macro_pos
     
 ###################################################################
 #  Hyperparameter sampling
@@ -251,8 +283,5 @@ class HyperparameterSampling(BasicSampling, Sampling):
 
         X = np.dot(np.random.uniform(size=(n_samples, n_var)), np.diag(xd)) + xl
 
-        y, overlap_rate, macro_pos = self.placer.evaluate(X)
-
-        y = np.array(y)
-        overlap_rate = np.array(overlap_rate)
-        return X, y, overlap_rate, macro_pos
+        y, macro_pos = self.placer.evaluate(X)
+        return X, y, macro_pos

@@ -214,8 +214,8 @@ class BO(BasicAlgo):
             else:
                 x = x.detach().cpu().numpy()
         
-        y, overlap_rate, macro_pos_all = self.placer.evaluate(x)
-        return np.array(y), np.array(overlap_rate), (macro_pos_all if return_macro_pos else None)
+        y, macro_pos_all = self.placer.evaluate(x)
+        return np.array(y), (macro_pos_all if return_macro_pos else None)
         
     def _optimize_acqf_and_get_observations(self, acqf, num_samples=1):
         if self.placer_type == "sp":
@@ -353,7 +353,7 @@ class BO(BasicAlgo):
             if self.args.verbose:
                 print(
                     f"\nBatch {i:>2}: best_hpwl = "
-                    f"{self.best_hpwl}    "
+                    f"{self.best_Y}    "
                     f"time = {t1-t0:>4.2f}.",
                 )
             else:

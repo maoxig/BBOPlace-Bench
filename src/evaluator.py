@@ -155,7 +155,7 @@ class Evaluator:
         if x.shape == 1:
             x = x.reshape(1, -1)
 
-        hpwl, overlap_rate, macro_pos = self.placer.evaluate(x)
+        hpwl, macro_pos = self.placer.evaluate(x)
 
         return np.array(hpwl)
 

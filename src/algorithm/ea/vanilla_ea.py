@@ -84,16 +84,13 @@ class VanillaEA(BasicAlgo):
         self.t = t_temp
 
         macro_pos_all = algo.pop.get("macro_pos")
-        overlap_rate = algo.pop.get("overlap_rate")
-        hpwl = algo.pop.get("F").flatten()
+        Y = algo.pop.get("F").flatten()
 
         if not self.start_from_checkpoint:
-            self._record_results(hpwl=hpwl, 
-                                 overlap_rate=overlap_rate,
+            self._record_results(Y=Y, 
                                  macro_pos_all=macro_pos_all,
                                  t_each_eval=t_each_eval, 
-                                 avg_t_each_eval=avg_t_each_eval,
-                                 avg_t_eval_solution=avg_t_eval_solution)
+                                 avg_t_each_eval=avg_t_each_eval,)
         else:
             self.start_from_checkpoint = False
 
