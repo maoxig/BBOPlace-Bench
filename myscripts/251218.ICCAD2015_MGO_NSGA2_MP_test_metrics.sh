@@ -15,10 +15,11 @@ python ../src/main.py \
     --eval_gp_hpwl=False \
     --n_population=50 \
     --n_sampling_repeat=5 \
-    --max_evals=1000 \
+    --max_evals=10000 \
     --max_eval_time=72 \
     --n_macro=512 \
     --sampling=random \
     --mutation=shuffle \
-    --crossover=uniform
+    --crossover=uniform \
+    --eval_metrics='["hpwl","congestion",]'
 done
