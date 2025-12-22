@@ -34,7 +34,7 @@ class DMPWorkerPool:
     
     MAX_RETRIES = 3
     WORKER_TIMEOUT = 300  # 5分钟超时
-    INIT_TIMEOUT = 10
+    INIT_TIMEOUT = 30
     
     def __init__(self, 
                  n_workers: int,
@@ -103,13 +103,13 @@ class DMPWorkerPool:
         if os.path.exists(sock_path):
             os.unlink(sock_path)
         
-        try:
+        if True:
             # 启动 worker 进程
             process = subprocess.Popen(
                 ["python3", self.worker_path, "--sock", sock_path],
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                # stdout=subprocess.DEVNULL,
+                # stderr=subprocess.DEVNULL,
                 cwd=self.args.ROOT_DIR,
                 preexec_fn=os.setsid
             )
@@ -124,7 +124,7 @@ class DMPWorkerPool:
                     sock.connect(sock_path)
                     connected = True
                     break
-                except Exception:
+                except Exception as e:
                     if process.poll() is not None:
                         # 进程已退出
                         break
@@ -169,8 +169,8 @@ class DMPWorkerPool:
                 last_used=time.time()
             )
             
-        except Exception as e:
-            print(f"Error spawning worker {worker_id}: {e}")
+        # except Exception as e:
+        #     print(f"Error spawning worker {worker_id}: {e}")
             return None
     
     def _send_command(self, sock: socket.socket, cmd: dict) -> Optional[dict]:

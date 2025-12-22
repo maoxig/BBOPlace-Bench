@@ -7,7 +7,7 @@ import numpy as np
 from typing import Dict, Optional
 from utils.constant import INF
 from PIL import Image
-from dmp_worker_pool import DMPWorkerPool
+from src.placer.dmp_worker_pool import DMPWorkerPool
 
 try:
     from thirdparty.dreamplace.Params import Params as DMPParams

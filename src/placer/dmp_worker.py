@@ -13,7 +13,19 @@ import signal
 import time
 import threading
 import psutil
+sys.path.append(os.path.abspath(".."))
 
+from config.benchmark import ROOT_DIR, BENCHMARK_DIR, benchmark_dict, benchmark_type_dict, benchmark_path_dict
+THIRDPARTY_DIR = os.path.join(ROOT_DIR, "thirdparty")
+SOURCE_DIR = os.path.join(ROOT_DIR, "src")
+DREAMPLACE_DIR = os.path.join(THIRDPARTY_DIR, "dreamplace")
+sys.path.append(ROOT_DIR)
+sys.path.append(THIRDPARTY_DIR)
+sys.path.append(SOURCE_DIR)
+sys.path.append(BENCHMARK_DIR)
+sys.path.append(DREAMPLACE_DIR)
+
+os.environ["PYTHONPATH"] = ":".join(sys.path)
 try:
     import thirdparty.dreamplace.ops.place_io.place_io as place_io
     from thirdparty.dreamplace.Params import Params as DMPParams
@@ -34,16 +46,20 @@ def _setup_inputs(params: DMPParams, args: dict):
         f"{args['benchmark']}.json",
     )
     params.load(json_path)
-
-    temp_subdir = args.get("temp_subdir", "WorkerPool")
-    temp_benchmark_path = os.path.join(
+    benchmark_folder = None
+    for key, value in benchmark_dict.items():
+        if args['benchmark'] in value:
+            benchmark_folder = key
+            break
+    benchmark_path = os.path.join(
         args["ROOT_DIR"],
-        f"benchmarks/.tmp/{temp_subdir}",
-        f"{args['benchmark']}_{args['unique_token']}",
+        "benchmarks",
+        benchmark_folder,
+        args['benchmark'],
     )
 
     def suffix2path(suffix: str) -> str:
-        return os.path.join(temp_benchmark_path, f"{args['benchmark']}") + suffix
+        return os.path.join(benchmark_path, f"{args['benchmark']}") + suffix
 
     if args["benchmark_type"] == "aux":
         params.fromJson({
@@ -85,7 +101,10 @@ class DMPWorker:
         self.args = None
         self.canvas_width = None
         self.canvas_height = None
-
+        if DMPParams is None or DMPPlaceDB is None or NonLinearPlace is None:
+            print("Error importing DREAMPlace modules:", file=sys.stderr)
+            print("Error importing DREAMPlace modules")
+            raise ImportError("Failed to import DREAMPlace modules. Please ensure DREAMPlace is correctly installed.")
         self.params = DMPParams()
         self.placedb = DMPPlaceDB()
         self.placer = None

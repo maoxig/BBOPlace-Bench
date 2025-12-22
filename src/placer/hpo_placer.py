@@ -5,8 +5,9 @@
 import os
 import math
 from typing import Dict, Union, List
+from src.placer.basic_placer import BasicPlacer
 from src.utils.constant import EPS
-from dmp_worker_pool import DMPWorkerPool
+from src.placer.dmp_worker_pool import DMPWorkerPool
 
 try:
     from thirdparty.dreamplace.Params import Params as DMPParams
@@ -44,7 +45,7 @@ params_space = {
 }
 
 
-class HPOPlacer:
+class HPOPlacer(BasicPlacer):
     """超参数优化 Placer - 使用进程池"""
     
     DMP_CONFIG_PATH = "config/algorithm/dmp_config"
@@ -59,6 +60,7 @@ class HPOPlacer:
     def __init__(self, 
                  args, 
                  placedb,
+                 eval_metrics: List[str] = ["hpwl", ],
                  n_workers: int = 4):
         """
         初始化 HPO Placer
@@ -68,6 +70,7 @@ class HPOPlacer:
             placedb: 布局数据库
             n_workers: worker 进程数量
         """
+        super().__init__(args, placedb, eval_metrics)
         self.args = args
         self.placedb = placedb
         self.n_workers = n_workers
@@ -79,7 +82,7 @@ class HPOPlacer:
         # 初始化进程池
         worker_path = os.path.join(self.args.SOURCE_DIR, "placer/dmp_worker.py")
         self.worker_pool = DMPWorkerPool(
-            n_workers=n_workers,
+            n_workers=1,
             args=args,
             placedb=placedb,
             worker_path=worker_path,

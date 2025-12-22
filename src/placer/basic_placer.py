@@ -46,14 +46,15 @@ class BasicPlacer:
         self.placement_saving_lst = []
         self.figure_saving_lst = []
         self.n_max_saving_placement = args.n_max_saving_placement
-
-        if 'gp_hpwl' in self.eval_metrics or args.eval_gp_hpwl:
-            from gp_evaluator import GPEvaluator
-            self.gp_evaluator = GPEvaluator(args=args,
-                                            placedb=placedb)
+        if self.args.placer!="hpo":
+            if 'gp_hpwl' in self.eval_metrics or args.eval_gp_hpwl :
+                from gp_evaluator import GPEvaluator
+                self.gp_evaluator = GPEvaluator(args=args,
+                                                placedb=placedb)
+            else:
+                self.gp_evaluator = None
         else:
             self.gp_evaluator = None
-            
         self.t_eval_solution_total = 0
 
     def _evaluate(self, x):
@@ -109,7 +110,7 @@ class BasicPlacer:
         file_name = os.path.join(self.placement_save_path, 
                                 f'{n_eval}_{scale_hpwl:.2f}e{n_power}.{suffix}')
         if self.args.eval_gp_hpwl:
-            self.gp_evaluator.save_placement(hpwl=hpwl, placement_name=file_name)
+            self.gp_evaluator.save_placement(placement_name=file_name, macro_pos=macro_pos)
         else:
             type_map = {
                 "aux" : write_pl,
@@ -132,7 +133,7 @@ class BasicPlacer:
 
         file_name = os.path.join(self.fig_save_path, f"{n_eval}_{scale_hpwl:.2f}e{n_power}.png")
         if self.args.eval_gp_hpwl:
-            self.gp_evaluator.plot(hpwl=hpwl, figure_name=file_name)
+            self.gp_evaluator.plot(figure_name=file_name, macro_pos=macro_pos)
         else:
             self._plot_macro(macro_pos, file_name)
 
