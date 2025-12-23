@@ -5,7 +5,7 @@ from src.utils.debug import *
 from src.utils.compute_res import comp_res
 from src.utils.read_benchmark.read_aux import write_pl
 from src.utils.read_benchmark.read_def import write_def
-from src.utils.constant import get_n_power
+from src.utils.constant import INF, get_n_power
 
 from typing import overload
 

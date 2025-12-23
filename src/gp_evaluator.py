@@ -16,7 +16,7 @@ class GPEvaluator:
     def __init__(self, 
                  args, 
                  placedb,
-                 n_workers: int = 4) -> None:
+                 n_workers: int = 5) -> None:
         """
         初始化评估器
         

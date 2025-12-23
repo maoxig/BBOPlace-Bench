@@ -20,7 +20,7 @@ python ../src/main.py \
     --sampling=random \
     --mutation=shuffle \
     --crossover=uniform \
-    --eval_metrics='["hpwl","regularity","gp_hpwl"]' \
+    --eval_metrics='["hpwl","overlap","gp_hpwl"]' \
     --eval_gp_hpwl=True \
     --error_redirect=False \
     --n_max_saving_placement=4
