@@ -18,10 +18,6 @@ import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-@ray.remote(num_cpus=1, num_gpus=0.1)
-def evaluate_placer(placer, x0):
-    return placer._evaluate(x0)
-
 class BasicPlacer:
     def __init__(self, args, placedb, eval_metrics= ["hpwl"]) -> None:
         self.args = args
@@ -58,7 +54,7 @@ class BasicPlacer:
         self.t_eval_solution_total = 0
 
     def _evaluate(self, x):
-        # t = time.time()
+        # 单个评估逻辑，主要用于非批量场景或 fallback
         macro_pos = self._genotype2phenotype(x)
         res = comp_res(
             placedb=self.placedb,
@@ -66,31 +62,48 @@ class BasicPlacer:
             eval_metrics=self.eval_metrics,
             gp_evaluator=self.gp_evaluator  
         )
-        
-        # t_eval_solution = time.time() - t
         return res, macro_pos
     
     
     def evaluate(self, x):
         t = time.time()
-        if self.args.n_cpu_max > 1 and \
-            not self.args.eval_gp_hpwl and \
-            self.args.placer != "hpo":
-            futures = [evaluate_placer.remote(self, x0) for x0 in x]
-            results_and_positions = ray.get(futures)
-            results = [res[0] for res in results_and_positions]
-            macro_pos = [res[1] for res in results_and_positions]
-        else:
-            results_and_positions = [self._evaluate(x0) for x0 in x]
-            results = [res[0] for res in results_and_positions]
-            macro_pos = [res[1] for res in results_and_positions]
+        
+        # 1. 批量转换基因型到表现型
+        macro_pos_list = [self._genotype2phenotype(x0) for x0 in x]
+        
+        # 2. 批量评估 GP HPWL (如果启用)
+        gp_hpwl_results = []
+        if self.gp_evaluator is not None and ('gp_hpwl' in self.eval_metrics or self.args.eval_gp_hpwl):
+            # 使用 Actor 的批量评估接口
+            gp_hpwl_results = self.gp_evaluator.evaluate_batch(macro_pos_list)
+        
+        # 3. 计算其他指标 (本地计算)
+        results = []
+        for i, macro_pos in enumerate(macro_pos_list):
+            # 临时禁用 gp_evaluator 以避免 comp_res 再次调用它
+            # 我们手动注入 gp_hpwl 结果
+            res = comp_res(
+                placedb=self.placedb,
+                macros_pos=macro_pos,
+                eval_metrics=[m for m in self.eval_metrics if m != 'gp_hpwl'],
+                gp_evaluator=None 
+            )
+            
+            if gp_hpwl_results:
+                res['gp_hpwl'] = gp_hpwl_results[i]
+            elif 'gp_hpwl' in self.eval_metrics:
+                # 如果需要 gp_hpwl 但没有 evaluator (不应该发生)，设为 INF
+                res['gp_hpwl'] = float('inf')
+                
+            results.append(res)
+
         t_eval_solution = time.time() - t
         self.t_eval_solution_total += t_eval_solution
 
         res = {}
         for eval_metric in self.eval_metrics:
             res[eval_metric] = np.array([result[eval_metric] for result in results])
-        return res, macro_pos
+        return res, macro_pos_list
 
 
 
@@ -98,10 +111,6 @@ class BasicPlacer:
         logging.info("Placer saving placement")
         scale_hpwl, n_power = get_n_power(hpwl)
 
-        delete_file_name = None
-        if len(self.placement_saving_lst) == self.n_max_saving_placement:
-            delete_file_name = self.placement_saving_lst.pop(0)
-        
         suffix_map = {
             "aux" : "pl",
             "def" : "def"
@@ -109,6 +118,7 @@ class BasicPlacer:
         suffix = suffix_map[self.args.benchmark_type]
         file_name = os.path.join(self.placement_save_path, 
                                 f'{n_eval}_{scale_hpwl:.2f}e{n_power}.{suffix}')
+        
         if self.args.eval_gp_hpwl:
             self.gp_evaluator.save_placement(placement_name=file_name, macro_pos=macro_pos)
         else:
@@ -118,18 +128,11 @@ class BasicPlacer:
             }
             type_map[self.args.benchmark_type](file_name, macro_pos, self.placedb)
         
-        if delete_file_name is not None:
-            os.remove(delete_file_name)
-        self.placement_saving_lst.append(file_name)
-        assert len(self.placement_saving_lst) <= self.n_max_saving_placement
+        self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
 
     def plot(self, macro_pos:dict, n_eval:int, hpwl:float):
         logging.info("Placer ploting figure")
         scale_hpwl, n_power = get_n_power(hpwl)
-
-        delete_file_name = None
-        if len(self.figure_saving_lst) == self.n_max_saving_placement:
-            delete_file_name = self.figure_saving_lst.pop(0)
 
         file_name = os.path.join(self.fig_save_path, f"{n_eval}_{scale_hpwl:.2f}e{n_power}.png")
         if self.args.eval_gp_hpwl:
@@ -137,10 +140,32 @@ class BasicPlacer:
         else:
             self._plot_macro(macro_pos, file_name)
 
-        if delete_file_name is not None:
-            os.remove(delete_file_name)
-        self.figure_saving_lst.append(file_name)
-        assert len(self.figure_saving_lst) <= self.n_max_saving_placement
+        self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
+
+    def _manage_saved_files(self, directory, max_files):
+        """
+        管理保存的文件，保留最新的 max_files 个文件
+        """
+        try:
+            files = [os.path.join(directory, f) for f in os.listdir(directory)]
+            files = [f for f in files if os.path.isfile(f)]
+            
+            if len(files) <= max_files:
+                return
+                
+            # 按修改时间排序 (最新的在最后)
+            files.sort(key=os.path.getmtime)
+            
+            # 删除旧文件
+            files_to_delete = files[:-max_files]
+            for f in files_to_delete:
+                try:
+                    os.remove(f)
+                except OSError as e:
+                    logging.warning(f"Error deleting file {f}: {e}")
+                    
+        except Exception as e:
+            logging.warning(f"Error managing saved files in {directory}: {e}")
 
     def _plot_macro(self, macro_pos, file_name):
         fig = plt.figure()
@@ -232,6 +257,3 @@ class BasicPlacer:
 
     def __deepcopy__(self, memo=None):
         return self
-
-
-

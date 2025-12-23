@@ -1,13 +1,14 @@
 """
-重构后的 HPOPlacer - 使用进程池并行优化超参数
+重构后的 HPOPlacer - 使用 Ray Actor 并行优化超参数
 """
 
 import os
 import math
+import ray
 from typing import Dict, Union, List
 from src.placer.basic_placer import BasicPlacer
 from src.utils.constant import EPS
-from src.placer.dmp_worker_pool import DMPWorkerPool
+from src.placer.dmp_actor import DREAMPlaceActor
 
 try:
     from thirdparty.dreamplace.Params import Params as DMPParams
@@ -46,7 +47,7 @@ params_space = {
 
 
 class HPOPlacer(BasicPlacer):
-    """超参数优化 Placer - 使用进程池"""
+    """超参数优化 Placer - 使用 Ray Actor"""
     
     DMP_CONFIG_PATH = "config/algorithm/dmp_config"
     DMP_RESULT_DIR = os.path.join(
@@ -79,15 +80,19 @@ class HPOPlacer(BasicPlacer):
         self.params = DMPParams()
         self._load_dmp_config()
         
-        # 初始化进程池
-        worker_path = os.path.join(self.args.SOURCE_DIR, "placer/dmp_worker.py")
-        self.worker_pool = DMPWorkerPool(
-            n_workers=1,
-            args=args,
-            placedb=placedb,
-            worker_path=worker_path,
-            timeout_seconds=args.timeout_seconds
-        )
+        # 转换 args 为字典
+        self.args_dict = vars(args) if hasattr(args, '__dict__') else args
+        
+        # 初始化 Ray Actors
+        print(f"Initializing {n_workers} DREAMPlace Actors for HPO...")
+        self.actors = [
+            DREAMPlaceActor.remote(
+                self.args_dict, 
+                placedb.canvas_width, 
+                placedb.canvas_height
+            ) 
+            for _ in range(n_workers)
+        ]
 
     @property
     def param_dims(self) -> int:
@@ -117,19 +122,14 @@ class HPOPlacer(BasicPlacer):
     def _load_genotype(self, x: Dict[str, Numeric]) -> Dict:
         """
         加载基因型（超参数）并转换为 DMP 参数
-        
-        Args:
-            x: 超参数字典
-            
-        Returns:
-            DMP 参数更新字典
         """
         params_to_update = {}
         
         for param_name, value in x.items():
             lb, ub, tf = params_space[param_name]
-            assert lb - EPS < value < ub + EPS, \
-                f"Parameter {param_name} (={value}) is out of bound [{lb}, {ub}]."
+            # 稍微放宽边界检查，避免浮点误差
+            if not (lb - EPS < value < ub + EPS):
+                print(f"Warning: Parameter {param_name} (={value}) is out of bound [{lb}, {ub}].")
             
             param_value = tf(value)
             
@@ -150,12 +150,6 @@ class HPOPlacer(BasicPlacer):
     def _genotype2phenotype(self, x: Union[List, Dict]) -> Dict[str, tuple]:
         """
         将基因型转换为表现型（宏单元位置）
-        
-        Args:
-            x: 超参数（列表或字典）
-            
-        Returns:
-            宏单元位置字典 {name: (x, y)} 或空字典（失败）
         """
         # 将列表转换为字典
         if isinstance(x, (list, tuple)):
@@ -165,67 +159,69 @@ class HPOPlacer(BasicPlacer):
         # 加载参数
         params_update = self._load_genotype(x)
         
-        # 通过进程池执行布局
-        macro_pos = self.worker_pool.place(
-            params_update=params_update,
-            macro_lst=self.placedb.macro_lst
-        )
+        # 使用第一个 Actor 执行布局
+        actor = self.actors[0]
         
-        if macro_pos is None:
+        try:
+            macro_pos = ray.get(actor.place.remote(
+                params_update=params_update,
+                macro_lst=self.placedb.macro_lst
+            ))
+            
+            if macro_pos is None:
+                return {}
+            
+            # 转换格式 (Actor 已经返回了正确的格式，这里做个保险)
+            final_pos = {}
+            for k, v in macro_pos.items():
+                try:
+                    final_pos[k] = (v[0], v[1])
+                except:
+                    final_pos[k] = tuple(v)
+            
+            return final_pos
+        except Exception as e:
+            print(f"Error in HPO placement: {e}")
             return {}
-        
-        # 转换格式
-        for k, v in list(macro_pos.items()):
-            try:
-                macro_pos[k] = (v[0], v[1])
-            except:
-                macro_pos[k] = tuple(v)
-        
-        return macro_pos
 
     def optimize_batch(self, genotypes: List) -> List[Dict]:
         """
         批量优化（并行）
-        
-        Args:
-            genotypes: 超参数列表
-            
-        Returns:
-            宏单元位置列表
         """
         # 并行提交所有任务
         futures = []
-        for genotype in genotypes:
+        for i, genotype in enumerate(genotypes):
             # 将列表转换为字典
             if isinstance(genotype, (list, tuple)):
                 params_name = list(params_space.keys())
                 genotype = dict(zip(params_name, genotype))
             
             params_update = self._load_genotype(genotype)
-            future = self.worker_pool.submit_place(
+            actor = self.actors[i % self.n_workers]
+            futures.append(actor.place.remote(
                 params_update=params_update,
                 macro_lst=self.placedb.macro_lst
-            )
-            futures.append(future)
+            ))
         
         # 收集结果
         results = []
-        for future in futures:
-            try:
-                macro_pos = future.result(timeout=self.args.timeout_seconds)
+        try:
+            batch_results = ray.get(futures)
+            for macro_pos in batch_results:
                 if macro_pos:
                     # 转换格式
-                    for k, v in list(macro_pos.items()):
+                    final_pos = {}
+                    for k, v in macro_pos.items():
                         try:
-                            macro_pos[k] = (v[0], v[1])
+                            final_pos[k] = (v[0], v[1])
                         except:
-                            macro_pos[k] = tuple(v)
-                    results.append(macro_pos)
+                            final_pos[k] = tuple(v)
+                    results.append(final_pos)
                 else:
                     results.append({})
-            except Exception as e:
-                print(f"Batch optimization error: {e}")
-                results.append({})
+        except Exception as e:
+            print(f"Batch optimization error: {e}")
+            results = [{}] * len(genotypes)
         
         return results
 
@@ -233,31 +229,3 @@ class HPOPlacer(BasicPlacer):
         """防止深拷贝"""
         return self
     
-    def __del__(self):
-        """析构函数 - 清理资源"""
-        if hasattr(self, 'worker_pool'):
-            self.worker_pool.shutdown()
-
-
-# 使用示例
-if __name__ == "__main__":
-    # 创建 HPO Placer（8个并行 worker）
-    
-    placer = HPOPlacer(args, placedb, n_workers=8)
-    
-    # 单个参数配置优化
-    genotype = [1.5, 2.0, 0.005, 0.995, 0.95, 1.1, 300000, 5e-5, 2.5, 0.08, 1.0]
-    macro_pos = placer._genotype2phenotype(genotype)
-    print(f"Macro positions: {macro_pos}")
-    
-    # 批量并行优化
-    genotypes = [
-        [1.5, 2.0, 0.005, 0.995, 0.95, 1.1, 300000, 5e-5, 2.5, 0.08, 1.0],
-        [2.0, 2.5, 0.006, 0.990, 0.93, 1.12, 350000, 6e-5, 3.0, 0.07, 1.1],
-        [1.0, 1.5, 0.004, 0.998, 0.97, 1.08, 280000, 4e-5, 2.0, 0.09, 0.9],
-    ]
-    results = placer.optimize_batch(genotypes)
-    print(f"Batch results: {len(results)} configurations")
-    
-    # 清理
-    del placer

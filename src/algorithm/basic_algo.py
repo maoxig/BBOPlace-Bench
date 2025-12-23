@@ -96,8 +96,6 @@ class BasicAlgo:
                 avg_t_each_eval=avg_t_each_eval
             )
         
-        if self.args.eval_gp_hpwl:
-            self.placer.gp_evaluator.empty_saving_data()
 
 
     def _save_checkpoint(self):

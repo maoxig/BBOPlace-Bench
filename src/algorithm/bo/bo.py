@@ -80,7 +80,6 @@ class IntegerRandomSampling(FloatRandomSampling):
         X = super()._do(problem, n_samples, **kwargs)
         return np.around(X).astype(int)
 
-from placer.basic_placer import evaluate_placer
 
 class BO(BasicAlgo):
     def __init__(self, args, placer, logger):

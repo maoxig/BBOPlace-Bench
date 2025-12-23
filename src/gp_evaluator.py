@@ -1,24 +1,17 @@
+
 """
-重构后的 GPEvaluator - 使用进程池并行评估
+重构后的 GPEvaluator - 使用 Ray Actor 并行评估
 """
 
 import os
+import ray
 import numpy as np
-from typing import Dict, Optional
+from typing import Dict, List
 from utils.constant import INF
-from PIL import Image
-from src.placer.dmp_worker_pool import DMPWorkerPool
-
-try:
-    from thirdparty.dreamplace.Params import Params as DMPParams
-except ImportError:
-    DMPParams = None
-
+from src.placer.dmp_actor import DREAMPlaceActor
 
 class GPEvaluator:
-    """全局布局评估器 - 使用进程池"""
-    
-    DMP_CONFIG_PATH = "config/algorithm/dmp_config"
+    """全局布局评估器 - 使用 Ray Actor"""
     
     def __init__(self, 
                  args, 
@@ -35,28 +28,31 @@ class GPEvaluator:
         self.args = args
         self.placedb = placedb
         self.n_workers = n_workers
-        
-        # 加载 DMP 配置
-        self.dmp_params = DMPParams()
-        self._load_dmp_config()
-        
-        # 准备基准测试环境
-        self._prepare_benchmark()
-        
-        # 初始化进程池
-        worker_path = os.path.join(self.args.SOURCE_DIR, "placer/dmp_worker.py")
-        self.worker_pool = DMPWorkerPool(
-            n_workers=n_workers,
-            args=args,
-            placedb=placedb,
-            worker_path=worker_path,
-            timeout_seconds=args.timeout_seconds
-        )
-        
-        # 数据缓存
-        self.empty_saving_data()
         self.n_eval = 0
-    
+        
+        # 转换 args 为字典，确保可序列化且解耦
+        self.args_dict = vars(args) if hasattr(args, '__dict__') else args
+        
+        # 获取 verbose 设置，默认为 False
+        verbose = getattr(args, 'verbose', False)
+        
+        # 初始化 Ray Actors
+        # 注意：假设 Ray 已经在主进程中初始化 (ray.init())
+        print(f"Initializing {n_workers} DREAMPlace Actors...")
+        self.actors = [
+            DREAMPlaceActor.remote(
+                self.args_dict, 
+                placedb.canvas_width, 
+                placedb.canvas_height,
+                verbose=verbose
+            ) 
+            for _ in range(n_workers)
+        ]
+        
+        # 预热 Actors (可选，确保它们都加载完毕)
+        # ray.get([actor.evaluate.remote({}) for actor in self.actors])
+        print("DREAMPlace Actors initialized.")
+
     def evaluate(self, macro_pos: Dict[str, tuple]) -> float:
         """
         评估宏单元布局的 HPWL
@@ -67,19 +63,21 @@ class GPEvaluator:
         Returns:
             HPWL 值，失败返回 INF
         """
-        if len(macro_pos) == 0:
+        if not macro_pos:
             return INF
         
         self.n_eval += 1
         
-        # 通过进程池评估
-        hpwl = self.worker_pool.eval_hpwl(macro_pos)
+        # 简单的负载均衡：轮询
+        actor = self.actors[self.n_eval % self.n_workers]
         
-        if hpwl is None:
+        try:
+            # 同步等待结果
+            hpwl = ray.get(actor.evaluate.remote(macro_pos))
+            return float(hpwl)
+        except Exception as e:
+            print(f"Error in GPEvaluator evaluate: {e}")
             return INF
-        
-        return hpwl
-    
     def evaluate_batch(self, macro_pos_list: list) -> list:
         """
         批量评估多个布局（并行）
@@ -90,141 +88,115 @@ class GPEvaluator:
         Returns:
             HPWL 列表
         """
-        # 并行提交所有任务
         futures = []
-        for macro_pos in macro_pos_list:
-            future = self.worker_pool.submit_eval_hpwl(macro_pos)
-            futures.append(future)
+        for i, macro_pos in enumerate(macro_pos_list):
+            actor = self.actors[i % self.n_workers]
+            futures.append(actor.evaluate.remote(macro_pos))
         
-        # 收集结果
-        results = []
-        for future in futures:
-            try:
-                hpwl = future.result(timeout=self.args.timeout_seconds)
-                results.append(hpwl if hpwl is not None else INF)
-            except Exception as e:
-                print(f"Batch evaluation error: {e}")
-                results.append(INF)
-        
-        return results
+        try:
+            results = ray.get(futures)
+            # 处理可能的 None 或异常值
+            return [float(r) if r is not None else INF for r in results]
+        except Exception as e:
+            print(f"Error in batch evaluation: {e}")
+            return [INF] * len(macro_pos_list)
     
     def save_placement(self, 
                       macro_pos: Dict[str, tuple],
                       placement_name: str) -> bool:
         """
-        保存布局文件
-        
-        Args:
-            macro_pos: 宏单元位置
-            placement_name: 输出文件名（不含扩展名）
-            
-        Returns:
-            是否成功
+        保存单个布局文件
         """
         output_dir = os.path.dirname(placement_name)
-        os.makedirs(output_dir, exist_ok=True)
+        actor = self.actors[0]
         
-        return self.worker_pool.save_results(
-            macro_pos=macro_pos,
-            output_dir=output_dir,
-            save_placement=True,
-            save_plot=False
-        )
+        try:
+            ray.get(actor.save_results.remote(
+                macro_pos, 
+                output_dir, 
+                save_placement=True, 
+                save_plot=False
+            ))
+            return True
+        except Exception as e:
+            print(f"Error saving placement: {e}")
+            return False
+
+    def save_placement_batch(self, 
+                           macro_pos_list: List[Dict[str, tuple]],
+                           placement_names: List[str]) -> List[bool]:
+        """
+        批量保存布局文件（并行）
+        """
+        if len(macro_pos_list) != len(placement_names):
+            print("Error: macro_pos_list and placement_names must have same length")
+            return [False] * len(macro_pos_list)
+
+        futures = []
+        for i, (macro_pos, name) in enumerate(zip(macro_pos_list, placement_names)):
+            actor = self.actors[i % self.n_workers]
+            output_dir = os.path.dirname(name)
+            futures.append(actor.save_results.remote(
+                macro_pos, 
+                output_dir, 
+                save_placement=True, 
+                save_plot=False
+            ))
+        
+        try:
+            # 等待所有保存任务完成
+            ray.get(futures)
+            return [True] * len(macro_pos_list)
+        except Exception as e:
+            print(f"Error in batch save_placement: {e}")
+            return [False] * len(macro_pos_list)
     
     def plot(self, 
             macro_pos: Dict[str, tuple],
             figure_name: str) -> bool:
         """
-        生成布局可视化图
-        
-        Args:
-            macro_pos: 宏单元位置
-            figure_name: 输出图片文件名
-            
-        Returns:
-            是否成功
+        生成单个布局可视化图
         """
-        output_dir = os.path.dirname(figure_name)
-        os.makedirs(output_dir, exist_ok=True)
+        actor = self.actors[0]
         
-        success = self.worker_pool.save_results(
-            macro_pos=macro_pos,
-            output_dir=output_dir,
-            save_placement=False,
-            save_plot=True
-        )
+        try:
+            ray.get(actor.plot.remote(
+                macro_pos, 
+                figure_name
+            ))
+            return True
+        except Exception as e:
+            print(f"Error plotting: {e}")
+            return False
+
+    def plot_batch(self, 
+                  macro_pos_list: List[Dict[str, tuple]],
+                  figure_names: List[str]) -> List[bool]:
+        """
+        批量生成布局可视化图（并行）
+        """
+        if len(macro_pos_list) != len(figure_names):
+            print("Error: macro_pos_list and figure_names must have same length")
+            return [False] * len(macro_pos_list)
+
+        futures = []
+        for i, (macro_pos, name) in enumerate(zip(macro_pos_list, figure_names)):
+            actor = self.actors[i % self.n_workers]
+            futures.append(actor.plot.remote(
+                macro_pos, 
+                name
+            ))
         
-        if success:
-            # 翻转图像（与原实现保持一致）
-            try:
-                img = Image.open(figure_name)
-                out = img.transpose(Image.FLIP_TOP_BOTTOM)
-                img.close()
-                out.save(figure_name)
-            except Exception as e:
-                print(f"Error flipping image: {e}")
-                return False
-        
-        return success
-    
-    def _load_dmp_config(self):
-        """加载 DREAMPlace 配置"""
-        ROOT_DIR = self.args.ROOT_DIR
-        json_file = f"{self.args.benchmark}.json"
-        json_path = os.path.join(
-            ROOT_DIR,
-            self.DMP_CONFIG_PATH,
-            json_file
-        )
-        self.dmp_params.load(json_path)
-        self.dmp_params.benchmark = self.args.benchmark
-        self.dmp_params.random_center_init_flag = 1
-    
-    def _prepare_benchmark(self):
-        """准备基准测试环境"""
-        # 注意：进程池架构下不需要准备临时文件
-        # Worker 会直接接收 macro_pos 数据
-        pass
-    
-    def empty_saving_data(self):
-        """清空保存的数据"""
-        self.saving_data = {
-            "placement": {},
-            "figure": {}
-        }
-    
+        try:
+            ray.get(futures)
+            return [True] * len(macro_pos_list)
+        except Exception as e:
+            print(f"Error in batch plotting: {e}")
+            return [False] * len(macro_pos_list)
+
+
     def __deepcopy__(self, memo=None):
-        """防止深拷贝"""
+        """
+        防止深拷贝
+        """
         return self
-    
-    def __del__(self):
-        """析构函数 - 清理资源"""
-        if hasattr(self, 'worker_pool'):
-            self.worker_pool.shutdown()
-
-
-# 使用示例
-if __name__ == "__main__":
-    # 创建评估器（4个并行 worker）
-    evaluator = GPEvaluator(args, placedb, n_workers=4)
-    
-    # 单个评估
-    macro_pos = {"macro1": (100, 200), "macro2": (300, 400)}
-    hpwl = evaluator.evaluate(macro_pos)
-    print(f"HPWL: {hpwl}")
-    
-    # 批量并行评估
-    macro_pos_list = [
-        {"macro1": (100, 200), "macro2": (300, 400)},
-        {"macro1": (150, 250), "macro2": (350, 450)},
-        {"macro1": (200, 300), "macro2": (400, 500)},
-    ]
-    hpwl_list = evaluator.evaluate_batch(macro_pos_list)
-    print(f"Batch HPWL: {hpwl_list}")
-    
-    # 保存结果
-    evaluator.save_placement(macro_pos, "output/placement")
-    evaluator.plot(macro_pos, "output/layout.png")
-    
-    # 清理
-    del evaluator
