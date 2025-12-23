@@ -62,17 +62,17 @@ class BasicAlgo:
                 )
                 logging.info(f"n_eval: {self.n_eval}\t" + y_info)
 
-                if len(m_pos) > 0:
-                    self.placer.plot(
-                        macro_pos=m_pos,
-                        n_eval=self.n_eval,
-                        hpwl = y[0]
-                    )
-                    self.placer.save_placement(
-                        macro_pos=m_pos,
-                        n_eval=self.n_eval,
-                        hpwl = y[0]
-                    )
+                # if len(m_pos) > 0:
+                #     self.placer.plot(
+                #         macro_pos=m_pos,
+                #         n_eval=self.n_eval,
+                #         hpwl = y[0]
+                #     )
+                #     self.placer.save_placement(
+                #         macro_pos=m_pos,
+                #         n_eval=self.n_eval,
+                #         hpwl = y[0]
+                #     )
 
 
             for idx, metric in enumerate(self.eval_metrics):

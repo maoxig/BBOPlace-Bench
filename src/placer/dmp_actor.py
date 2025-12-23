@@ -20,7 +20,7 @@ import thirdparty.dreamplace.ops.place_io.place_io as place_io
 from thirdparty.dreamplace.Params import Params as DMPParams
 from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
 from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
-
+import thirdparty.dreamplace.Timer as Timer
 
 
 @ray.remote(num_cpus=1, num_gpus=0.2) # 默认每个Actor占用0.2个GPU，可根据显存调整
@@ -66,7 +66,7 @@ class DREAMPlaceActor:
             "placement": None,
             "figure": None,}
 
-    def evaluate(self, macro_pos):
+    def evaluate_macro_pos(self, macro_pos):
         """
         评估 HPWL
         macro_pos: {macro_name: (x, y)}
@@ -93,6 +93,44 @@ class DREAMPlaceActor:
         self.cached_data["figure"] = np.copy(self.placer.pos[0].data.clone().cpu().numpy())
         return float(hpwl)
 
+    def evaluate_hyper_params(self, params_update: dict, macro_lst: list):
+        if isinstance(params_update, dict):
+            self.params.fromJson(params_update)
+        with th.no_grad():
+            self.placer.pos[0].data.copy_(
+                th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
+            )
+        metrics = self.placer(self.params, self.placedb)
+
+        macro_pos = self.placedb.export(self.params, macro_lst)
+        for node_name in list(macro_pos.keys()):
+            x = macro_pos[node_name][0] / (self.placedb.xh - self.placedb.xl) * self.canvas_width
+            y = macro_pos[node_name][1] / (self.placedb.yh - self.placedb.yl) * self.canvas_height
+            macro_pos[node_name] = [x, y]
+
+        return macro_pos
+
+    def evaluate_timing(self):
+        self.timer = Timer.Timer()
+        self.timer(self.params, self.placedb)
+        # This must be done to explicitly execute the parser builders.
+        # The parsers in OpenTimer are all in lazy mode.
+        self.timer.update_timing()
+        timing_op = self.placer.op_collections.timing_op
+        time_unit = timing_op.timer.time_unit()
+
+        # Perform timing analysis on current placement
+        # The timing operator takes the current position as input
+        timing_op(self.placer.pos[0].data.clone().cpu())
+        timing_op.timer.update_timing()
+
+        # Report TNS and WNS
+        # Note: OpenTimer considers early,late,rise,fall for tns/wns
+        # The following values are normalized by time units
+        tns = timing_op.timer.report_tns_elw(split=1) / (time_unit * 1e17)
+        wns = timing_op.timer.report_wns(split=1) / (time_unit * 1e15)
+        
+        return float(tns), float(wns)
 
     def plot(self, figure_name):
         """
@@ -122,21 +160,6 @@ class DREAMPlaceActor:
         """
         保存结果
         """
-        # 确保目录存在
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # 如果需要绘图，调用 plot
-        if save_plot:
-            # 假设 output_dir 是目录，我们生成默认文件名，或者如果它是文件路径
-            if output_dir.endswith('.png'):
-                figname = output_dir
-            else:
-                figname = os.path.join(output_dir, "plot.png")
-            self.plot(figname)
-
-        if save_placement:
-            pass
-            
         return True
 
     def _update_macro_pos(self, macro_pos):
@@ -173,9 +196,6 @@ class DREAMPlaceActor:
     
 
     def _setup_inputs(self, args_dict):
-        """
-        设置输入文件路径 (从 dmp_worker.py 移植并简化)
-        """
         root_dir = args_dict["ROOT_DIR"]
         benchmark = args_dict["benchmark"]
         benchmark_type = args_dict["benchmark_type"]
@@ -221,8 +241,7 @@ class DREAMPlaceActor:
         
         # 设置输出目录和其他参数
         self.params.fromJson({
-            "plot_flag": 1,
-            "test_mode": 1,
+            "plot_flag": 0,
             "timing_opt_flag": 0,
             "random_seed": args_dict["seed"],
             "result_dir": os.path.join(

@@ -136,7 +136,7 @@ class BasicPlacer:
 
         file_name = os.path.join(self.fig_save_path, f"{n_eval}_{scale_hpwl:.2f}e{n_power}.png")
         if self.args.eval_gp_hpwl:
-            self.gp_evaluator.plot(figure_name=file_name, macro_pos=macro_pos)
+            self.gp_evaluator.plot(figure_name=file_name)
         else:
             self._plot_macro(macro_pos, file_name)
 
