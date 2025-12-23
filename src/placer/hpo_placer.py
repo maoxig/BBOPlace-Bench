@@ -2,6 +2,7 @@
 重构后的 HPOPlacer - 使用 Ray Actor 并行优化超参数
 """
 
+import logging
 import os
 import math
 import ray
@@ -91,10 +92,11 @@ class HPOPlacer(BasicPlacer):
             DREAMPlaceActor.remote(
                 self.args_dict, 
                 placedb.canvas_width, 
-                placedb.canvas_height,true
+                placedb.canvas_height
             ) 
             for _ in range(self.n_workers)
         ]
+        
 
     @property
     def param_dims(self) -> int:
@@ -249,6 +251,39 @@ class HPOPlacer(BasicPlacer):
         self.t_eval_solution_total += t_eval_solution
         
         return final_results, macro_pos_list
+
+    def save_placement(self, macro_pos, n_eval):
+        """
+        覆盖 BasicPlacer 的 save_placement，使用 HPO 的 actor
+        """
+        logging.info("HPO Placer saving placement")
+        
+        suffix_map = {
+            "aux" : "pl",
+            "def" : "def"
+        }
+        suffix = suffix_map[self.args.benchmark_type]
+        file_name = os.path.join(self.placement_save_path, 
+                                f'{n_eval}.{suffix}')
+        
+        # 使用轮询方式选择 actor 进行保存，均衡负载
+        actor_idx = n_eval % len(self.actors)
+        ray.get(self.actors[actor_idx].save_placement.remote(file_name))
+        
+        self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
+
+    def plot(self, macro_pos:dict, n_eval:int):
+        """
+        覆盖 BasicPlacer 的 plot，使用 HPO 的 actor
+        """
+        logging.info("HPO Placer plotting figure")
+
+        file_name = os.path.join(self.fig_save_path, f"{n_eval}.png")
+        
+        actor_idx = n_eval % len(self.actors)
+        ray.get(self.actors[actor_idx].plot.remote(file_name))
+
+        self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
 
     def __deepcopy__(self, memo=None):
         """防止深拷贝"""

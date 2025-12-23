@@ -209,26 +209,38 @@ class DREAMPlaceActor:
         @param macro_pos locations of cells
         @param figname output figure name
         """
-        
         os.makedirs(os.path.dirname(figure_name), exist_ok=True)
         
         pos = self.cached_data["figure"]
+        if pos is None:
+            return False
+
+        # Convert numpy array back to tensor for plot function
+        pos_tensor = th.from_numpy(pos).to(self.placer.device)
+        
         self.placer.plot(
             self.params,
+            self.placedb,
             None,
-            None,
-            pos,
+            pos_tensor,
             figure_name, 
         )
 
-        img = Image.open(figure_name)
-        out = img.transpose(Image.FLIP_TOP_BOTTOM) # type: ignore
-        img.close()
-        out.save(figure_name)
+        try:
+            img = Image.open(figure_name)
+            out = img.transpose(Image.FLIP_TOP_BOTTOM) # type: ignore
+            img.close()
+            out.save(figure_name)
+        except Exception as e:
+            print(f"Error processing image {figure_name}: {e}")
+            
         self.cached_data["figure"] = None
         return True
     
     def save_placement(self, placement_name):
+        if self.cached_data["placement"] is None:
+            return False
+            
         self.placedb.node_x[:] = self.cached_data["placement"][0].copy()
         self.placedb.node_y[:] = self.cached_data["placement"][1].copy()
         # unscale locations
@@ -241,6 +253,7 @@ class DREAMPlaceActor:
             self.params, 
             placement_name
         )
+        return True
 
     def save_results(self, macro_pos, output_dir, save_placement=True, save_plot=True):
         """
