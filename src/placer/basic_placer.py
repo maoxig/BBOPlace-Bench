@@ -1,6 +1,7 @@
 from abc import abstractmethod
 
 import numpy as np
+from src.placer.dmp_actor import DREAMPlaceActor
 from src.utils.debug import *
 from src.utils.compute_res import comp_res
 from src.utils.read_benchmark.read_aux import write_pl
@@ -17,6 +18,19 @@ import logging
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+
+@ray.remote(num_cpus=1, num_gpus=0.1)
+def evaluate_placer(placer: 'BasicPlacer', x0):
+    return placer._evaluate(x0)
+
+@ray.remote(num_cpus=1, num_gpus=0.1)
+def save_placement_remote(placer: 'BasicPlacer', macro_pos, n_eval):
+    placer.save_placement(macro_pos, n_eval)
+
+
+@ray.remote(num_cpus=1, num_gpus=0.1)
+def plot_placement_remote(placer: 'BasicPlacer', macro_pos, n_eval):
+    placer.plot(macro_pos, n_eval)
 
 class BasicPlacer:
     def __init__(self, args, placedb, eval_metrics= ["hpwl"]) -> None:
@@ -35,81 +49,82 @@ class BasicPlacer:
         self.metrics_file = os.path.join(args.result_path, "metrics.csv")
         with open(self.metrics_file, 'a', newline='') as f:
             writer = csv.writer(f)
-            header = ["n_eval"] + [f"{prefix}_{metric}" for prefix in ["his_best", "pop_best", "pop_avg", "pop_std"] for metric in self.eval_metrics] + \
+            header = ["n_eval"] + [f"{prefix}_{metric}" for prefix in ["current","his_best", "pop_best", "pop_avg", "pop_std"] for metric in self.eval_metrics] + \
                         ["t_each_eval", "avg_t_each_eval", "avg_t_algo_optimization", "avg_t_eval_solution"]
             writer.writerow(header)
         
         self.placement_saving_lst = []
         self.figure_saving_lst = []
         self.n_max_saving_placement = args.n_max_saving_placement
-        if self.args.placer!="hpo":
-            if 'gp_hpwl' in self.eval_metrics or args.eval_gp_hpwl :
-                from gp_evaluator import GPEvaluator
-                self.gp_evaluator = GPEvaluator(args=args,
-                                                placedb=placedb)
-            else:
-                self.gp_evaluator = None
+        self.t_eval_solution_total = 0
+        # TODO，怎么画图？
+        if self.args.eval_gp_hpwl:
+            self.gp_evaluator = DREAMPlaceActor.remote(
+                vars(self.args), 
+                placedb.canvas_width, 
+                placedb.canvas_height
+            ) 
         else:
             self.gp_evaluator = None
-        self.t_eval_solution_total = 0
-
     def _evaluate(self, x):
         # 单个评估逻辑，主要用于非批量场景或 fallback
-        macro_pos = self._genotype2phenotype(x)
-        res = comp_res(
-            placedb=self.placedb,
-            macros_pos=macro_pos,
-            eval_metrics=self.eval_metrics,
-            gp_evaluator=self.gp_evaluator  
-        )
+        res = {}
+        macro_pos, info = self._genotype2phenotype(x)
+        res = comp_res(macros_pos=macro_pos, placedb=self.placedb, eval_metrics=self.eval_metrics)
+        
+        if self.args.placer == 'hpo':
+            res.update(info) # gp_hpwl, or tns, or wns
+        else:
+            gp_res = {}
+            if self.args.eval_gp_hpwl:
+                gp_res = ray.get(self.gp_evaluator.evaluate_macro_pos.remote(macro_pos))
+            res.update(gp_res)
+            
+        # 初始化评估器，根据需求评估，并且返回对应指标
+        # 总共4种情况：
+        # 1. macro placer，仅评估macro级别指标
+        # 2. macro placer + gp evaluator， 仅gp级别指标
+        # 3. macro placer，评估macro 级别指标 + gp级别指标
+        # 4. global placer， 仅评估macro级别指标
+        # 5. global placer + gp evaluator，仅评估gp级别指标
+        # 6. global placer + gp evaluator，评估macro 级别指标 + gp级别指标
+
         return res, macro_pos
     
     
     def evaluate(self, x):
         t = time.time()
-        
-        # 1. 批量转换基因型到表现型
-        macro_pos_list = [self._genotype2phenotype(x0) for x0 in x]
-        
-        # 2. 批量评估 GP HPWL (如果启用)
-        gp_hpwl_results = []
-        if self.gp_evaluator is not None and ('gp_hpwl' in self.eval_metrics or self.args.eval_gp_hpwl):
-            # 使用 Actor 的批量评估接口
-            gp_hpwl_results = self.gp_evaluator.evaluate_batch(macro_pos_list)
-        
-        # 3. 计算其他指标 (本地计算)
-        results = []
-        for i, macro_pos in enumerate(macro_pos_list):
-            # 临时禁用 gp_evaluator 以避免 comp_res 再次调用它
-            # 我们手动注入 gp_hpwl 结果
-            res = comp_res(
-                placedb=self.placedb,
-                macros_pos=macro_pos,
-                eval_metrics=[m for m in self.eval_metrics if m != 'gp_hpwl'],
-                gp_evaluator=None 
-            )
-            
-            if gp_hpwl_results:
-                res['gp_hpwl'] = gp_hpwl_results[i]
-            elif 'gp_hpwl' in self.eval_metrics:
-                # 如果需要 gp_hpwl 但没有 evaluator (不应该发生)，设为 INF
-                res['gp_hpwl'] = float('inf')
-                
-            results.append(res)
-
+        futures = [evaluate_placer.remote(self, x0) for x0 in x]
+        results = ray.get(futures) # {eval_metric: value, ...}, macro_pos
+        #print(results)
         t_eval_solution = time.time() - t
         self.t_eval_solution_total += t_eval_solution
 
         res = {}
         for eval_metric in self.eval_metrics:
-            res[eval_metric] = np.array([result[eval_metric] for result in results])
+            res[eval_metric] = np.array([result[0][eval_metric] for result in results])
+        macro_pos_list = [result[1] for result in results]
         return res, macro_pos_list
 
+    def save_placement_batch(self, 
+                            macro_pos_list: list,
+                            n_eval_list: list) -> bool:
+        """
+        批量保存多个布局文件
+        """
+        futures = []
+        for macro_pos, n_eval in zip(macro_pos_list, n_eval_list):
+            futures.append(save_placement_remote.remote(self, macro_pos, n_eval))
+        try:
+            ray.get(futures)
+            return True 
+        except Exception as e:
+            print(f"Error in batch save placement: {e}")
+            return False
 
 
-    def save_placement(self, macro_pos, n_eval, hpwl):
+    def save_placement(self, macro_pos, n_eval):
         logging.info("Placer saving placement")
-        scale_hpwl, n_power = get_n_power(hpwl)
 
         suffix_map = {
             "aux" : "pl",
@@ -117,10 +132,10 @@ class BasicPlacer:
         }
         suffix = suffix_map[self.args.benchmark_type]
         file_name = os.path.join(self.placement_save_path, 
-                                f'{n_eval}_{scale_hpwl:.2f}e{n_power}.{suffix}')
+                                f'{n_eval}.{suffix}')
         
         if self.args.eval_gp_hpwl:
-            self.gp_evaluator.save_placement(placement_name=file_name, macro_pos=macro_pos)
+            ray.get(self.gp_evaluator.save_placement.remote(placement_name=file_name))
         else:
             type_map = {
                 "aux" : write_pl,
@@ -130,13 +145,23 @@ class BasicPlacer:
         
         self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
 
-    def plot(self, macro_pos:dict, n_eval:int, hpwl:float):
-        logging.info("Placer ploting figure")
-        scale_hpwl, n_power = get_n_power(hpwl)
+    def plot_batch(self, macro_pos_list: list, n_eval_list: list) -> bool:
+        futures = []
+        for macro_pos, n_eval in zip(macro_pos_list, n_eval_list):
+            futures.append(plot_placement_remote.remote(self, macro_pos, n_eval))
+        try:
+            ray.get(futures)
+            return True
+        except Exception as e:
+            print(f"Error in batch plot: {e}")
+            return False
+    
+    def plot(self, macro_pos:dict, n_eval:int):
+        logging.info("Placer plotting figure")
 
-        file_name = os.path.join(self.fig_save_path, f"{n_eval}_{scale_hpwl:.2f}e{n_power}.png")
+        file_name = os.path.join(self.fig_save_path, f"{n_eval}.png")
         if self.args.eval_gp_hpwl:
-            self.gp_evaluator.plot(figure_name=file_name)
+            ray.get(self.gp_evaluator.plot.remote(figure_name=file_name))
         else:
             self._plot_macro(macro_pos, file_name)
 
@@ -194,6 +219,7 @@ class BasicPlacer:
     def save_metrics(
             self, 
             n_eval, 
+            current_Y,
             his_best_Y, 
             pop_best_Y, 
             pop_avg_Y, 
@@ -204,7 +230,7 @@ class BasicPlacer:
             ):
         with open(self.metrics_file, 'a', newline='') as f:
             writer = csv.writer(f)
-            content = [n_eval] + [value for Y in [his_best_Y, pop_best_Y, pop_avg_Y, pop_std_Y] for value in Y] + [t_each_eval, avg_t_each_eval, avg_t_each_eval - avg_t_eval_solution, avg_t_eval_solution ]
+            content = [n_eval] + [value for Y in [current_Y, his_best_Y, pop_best_Y, pop_avg_Y, pop_std_Y] for value in Y] + [t_each_eval, avg_t_each_eval, avg_t_each_eval - avg_t_eval_solution, avg_t_eval_solution ]
             writer.writerow(content)
 
     def _save_checkpoint(self, checkpoint_path):
@@ -253,7 +279,7 @@ class BasicPlacer:
 
     @abstractmethod
     def _genotype2phenotype(self, x):
-        pass
+        raise NotImplementedError
 
     def __deepcopy__(self, memo=None):
         return self

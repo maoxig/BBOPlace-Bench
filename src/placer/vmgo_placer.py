@@ -185,7 +185,7 @@ class VanillaMaskGuidedOptimizationPlacer(BasicPlacer):
             y = scaled_y * self.grid_height
             macro_pos[macro] = (x, y)
 
-        return macro_pos
+        return macro_pos, {}
 
 
     def _rank_macro(self):

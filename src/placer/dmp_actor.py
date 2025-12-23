@@ -23,13 +23,15 @@ from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
 import thirdparty.dreamplace.Timer as Timer
 
 
-@ray.remote(num_cpus=1, num_gpus=0.2) # 默认每个Actor占用0.2个GPU，可根据显存调整
+@ray.remote(num_cpus=1, num_gpus=0.1)
 class DREAMPlaceActor:
     def __init__(self, args_dict, canvas_width, canvas_height, verbose=False):
         """
         初始化 DREAMPlace Actor
-        args_dict: 包含 args 的字典 (避免传递复杂对象)
+        args_dict: 包含 args 的字典
         """
+        # 重定向输出
+
         self.args_dict = args_dict
         self.canvas_width = canvas_width
         self.canvas_height = canvas_height
@@ -41,6 +43,8 @@ class DREAMPlaceActor:
         
         # 设置日志级别
         if not verbose:
+            sys.stdout = open(os.devnull, 'w')
+            sys.stderr = open(os.devnull, 'w')
             logging.getLogger().setLevel(logging.ERROR)
         
         if DMPParams is None:
@@ -51,13 +55,12 @@ class DREAMPlaceActor:
         # 设置参数并加载 DB
         self._setup_inputs(self.args_dict)
         self.placedb(self.params)
-
-        # 预处理节点名称 (用于后续可能的映射)
-        self.node_names = self.placedb.node_names.astype(np.str_)
+        self.placer = NonLinearPlace(self.params, self.placedb, timer=None)
+        # cache node_names for evaluator
+        self.node_names = self.placedb.node_names.astype('U')
         mask = np.char.find(self.node_names, "DREAMPlace") != -1
         modified = np.char.split(self.node_names[mask], '.').tolist()
         self.node_names[mask] = [n[0] for n in modified]
-        self.placer = NonLinearPlace(self.params, self.placedb, timer=None)
 
         self.reset_cache()
 
@@ -71,9 +74,9 @@ class DREAMPlaceActor:
         评估 HPWL
         macro_pos: {macro_name: (x, y)}
         """
-
         # 重置缓存
         self.reset_cache()
+        
         # 1. 更新宏单元位置
         self._update_macro_pos(macro_pos)
         
@@ -91,24 +94,88 @@ class DREAMPlaceActor:
              hpwl = hpwl[0]
         self.cached_data["placement"] = (self.placedb.node_x.copy(), self.placedb.node_y.copy())
         self.cached_data["figure"] = np.copy(self.placer.pos[0].data.clone().cpu().numpy())
-        return float(hpwl)
+
+        result ={ 
+            "macro_pos": macro_pos,
+            "gp_hpwl": float(hpwl)
+        }
+        if "wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
+           "tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
+            timing_res = self.evaluate_timing()
+            result.update(timing_res)
+        return result
 
     def evaluate_hyper_params(self, params_update: dict, macro_lst: list):
+        self.reset_cache()
+        
         if isinstance(params_update, dict):
             self.params.fromJson(params_update)
+            
         with th.no_grad():
             self.placer.pos[0].data.copy_(
                 th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
             )
         metrics = self.placer(self.params, self.placedb)
-
-        macro_pos = self.placedb.export(self.params, macro_lst)
+        
+        # 处理 macro_lst 可能存在的名称不匹配问题 (bytes vs str)
+        if macro_lst and len(macro_lst) > 0:
+            sample_macro = macro_lst[0]
+            if sample_macro not in self.placedb.node_name2id_map:
+                # 尝试检测 map 中的 key 类型
+                first_key = next(iter(self.placedb.node_name2id_map))
+                if isinstance(first_key, bytes) and isinstance(sample_macro, str):
+                    macro_lst = [m.encode('utf-8') for m in macro_lst]
+                elif isinstance(first_key, str) and isinstance(sample_macro, bytes):
+                    macro_lst = [m.decode('utf-8') for m in macro_lst]
+        
+        try:
+            macro_pos = self.placedb.export(self.params, macro_lst)
+        except KeyError as e:
+            # 如果仍然失败，尝试更激进的匹配（例如忽略 DREAMPlace 前缀）
+            # 这通常发生在 DREAMPlace 内部重命名了节点
+            print(f"Warning: Direct export failed ({e}), trying fuzzy match...")
+            macro_pos = {}
+            node_name2id = self.placedb.node_name2id_map
+            
+            # 构建一个反向映射或者清理后的映射
+            clean_map = {}
+            for name, id in node_name2id.items():
+                clean_name = name
+                if isinstance(name, bytes):
+                    clean_name = name.decode('utf-8')
+                if "DREAMPlace" in clean_name:
+                    # 尝试去除前缀等，这里简单假设包含关系
+                    # 更准确的做法是参考 _init_data 中的清理逻辑
+                    pass
+                clean_map[clean_name] = id
+                
+            # 这里我们直接使用 self.node_names (已经清理过的数组) 来查找
+            # 因为 export 本质上就是查 ID 然后找坐标
+            for macro in macro_lst:
+                macro_str = macro.decode('utf-8') if isinstance(macro, bytes) else macro
+                indices = np.where(self.node_names == macro_str)[0]
+                if len(indices) > 0:
+                    node_id = indices[0]
+                    x = self.placedb.node_x[node_id]
+                    y = self.placedb.node_y[node_id]
+                    macro_pos[macro] = [x, y]
+                else:
+                    print(f"Error: Macro {macro} not found in placedb")
+                    
         for node_name in list(macro_pos.keys()):
             x = macro_pos[node_name][0] / (self.placedb.xh - self.placedb.xl) * self.canvas_width
             y = macro_pos[node_name][1] / (self.placedb.yh - self.placedb.yl) * self.canvas_height
             macro_pos[node_name] = [x, y]
 
-        return macro_pos
+        result = {
+            "macro_pos": macro_pos,
+            "gp_hpwl": float(metrics[-1].hpwl.cpu().item())
+        }
+        if "wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
+           "tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
+            timing_res = self.evaluate_timing()
+            result.update(timing_res)
+        return result
 
     def evaluate_timing(self):
         self.timer = Timer.Timer()
@@ -130,7 +197,11 @@ class DREAMPlaceActor:
         tns = timing_op.timer.report_tns_elw(split=1) / (time_unit * 1e17)
         wns = timing_op.timer.report_wns(split=1) / (time_unit * 1e15)
         
-        return float(tns), float(wns)
+        result = {
+            "tns": float(tns),
+            "wns": float(wns)
+        }
+        return result
 
     def plot(self, figure_name):
         """
@@ -154,8 +225,23 @@ class DREAMPlaceActor:
         out = img.transpose(Image.FLIP_TOP_BOTTOM) # type: ignore
         img.close()
         out.save(figure_name)
+        self.cached_data["figure"] = None
         return True
     
+    def save_placement(self, placement_name):
+        self.placedb.node_x[:] = self.cached_data["placement"][0].copy()
+        self.placedb.node_y[:] = self.cached_data["placement"][1].copy()
+        # unscale locations
+        node_x, node_y = self.placedb.unscale_pl(self.params.shift_factor, 
+                                                     self.params.scale_factor)
+        # update raw database
+        place_io.PlaceIOFunction.apply(self.placedb.rawdb, node_x, node_y, all_movable=True)
+
+        self.placedb.write(
+            self.params, 
+            placement_name
+        )
+
     def save_results(self, macro_pos, output_dir, save_placement=True, save_plot=True):
         """
         保存结果
@@ -174,15 +260,9 @@ class DREAMPlaceActor:
             dmp_scale_factor_y = (self.placedb.yh - self.placedb.yl)/ self.canvas_height # type: ignore
 
         for macro, pos in macro_pos.items():
-            # 使用 numpy 查找索引，与 dmp_worker.py 保持一致
             index = np.where(self.node_names == macro)
-            if len(index[0]) == 0:
-                continue
-                
-            # 使用 round
             pos_x = round(pos[0] * dmp_scale_factor_x)
             pos_y = round(pos[1] * dmp_scale_factor_y)
-            
             self.placedb.node_x[index] = pos_x
             self.placedb.node_y[index] = pos_y
         node_x, node_y = self.placedb.unscale_pl(self.params.shift_factor, self.params.scale_factor)

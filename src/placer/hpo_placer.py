@@ -5,10 +5,13 @@
 import os
 import math
 import ray
+import time
+import numpy as np
 from typing import Dict, Union, List
 from src.placer.basic_placer import BasicPlacer
 from src.utils.constant import EPS
 from src.placer.dmp_actor import DREAMPlaceActor
+from src.utils.compute_res import comp_res
 
 try:
     from thirdparty.dreamplace.Params import Params as DMPParams
@@ -61,8 +64,7 @@ class HPOPlacer(BasicPlacer):
     def __init__(self, 
                  args, 
                  placedb,
-                 eval_metrics: List[str] = ["hpwl", ],
-                 n_workers: int = 4):
+                 eval_metrics: List[str] = ["hpwl", ]):
         """
         初始化 HPO Placer
         
@@ -74,7 +76,7 @@ class HPOPlacer(BasicPlacer):
         super().__init__(args, placedb, eval_metrics)
         self.args = args
         self.placedb = placedb
-        self.n_workers = n_workers
+        self.n_workers = 4
         
         # 加载 DMP 配置
         self.params = DMPParams()
@@ -84,14 +86,14 @@ class HPOPlacer(BasicPlacer):
         self.args_dict = vars(args) if hasattr(args, '__dict__') else args
         
         # 初始化 Ray Actors
-        print(f"Initializing {n_workers} DREAMPlace Actors for HPO...")
+        print(f"Initializing {self.n_workers } DREAMPlace Actors for HPO...")
         self.actors = [
             DREAMPlaceActor.remote(
                 self.args_dict, 
                 placedb.canvas_width, 
-                placedb.canvas_height
+                placedb.canvas_height,true
             ) 
-            for _ in range(n_workers)
+            for _ in range(self.n_workers)
         ]
 
     @property
@@ -147,14 +149,12 @@ class HPOPlacer(BasicPlacer):
         
         return params_to_update
 
-    def _genotype2phenotype(self, x: Union[List, Dict]) -> Dict[str, tuple]:
+    def _genotype2phenotype(self, x: Union[List, Dict]):
         """
         将基因型转换为表现型（宏单元位置）
         """
-        # 将列表转换为字典
-        if isinstance(x, (list, tuple)):
-            params_name = list(params_space.keys())
-            x = dict(zip(params_name, x))
+        params_name = list(params_space.keys())
+        x = dict(tuple(zip(params_name, list(x))))
         
         # 加载参数
         params_update = self._load_genotype(x)
@@ -163,67 +163,92 @@ class HPOPlacer(BasicPlacer):
         actor = self.actors[0]
         
         try:
-            macro_pos = ray.get(actor.place.remote(
+            result = ray.get(actor.evaluate_hyper_params.remote(
                 params_update=params_update,
                 macro_lst=self.placedb.macro_lst
             ))
             
-            if macro_pos is None:
+            if result is None:
                 return {}
             
             # 转换格式 (Actor 已经返回了正确的格式，这里做个保险)
             final_pos = {}
-            for k, v in macro_pos.items():
+            for k, v in result["macro_pos"].items():
                 try:
                     final_pos[k] = (v[0], v[1])
                 except:
                     final_pos[k] = tuple(v)
             
-            return final_pos
+            return final_pos, result
         except Exception as e:
             print(f"Error in HPO placement: {e}")
-            return {}
+            return {}, {}
 
-    def optimize_batch(self, genotypes: List) -> List[Dict]:
+    def evaluate(self, x):
         """
-        批量优化（并行）
+        并行评估种群 - 使用 Actor Pool
         """
-        # 并行提交所有任务
+        t_start = time.time()
+        
+        # 1. 分发任务给 Actors
         futures = []
-        for i, genotype in enumerate(genotypes):
-            # 将列表转换为字典
-            if isinstance(genotype, (list, tuple)):
-                params_name = list(params_space.keys())
-                genotype = dict(zip(params_name, genotype))
+        for i, xi in enumerate(x):
+            actor = self.actors[i % len(self.actors)]
             
-            params_update = self._load_genotype(genotype)
-            actor = self.actors[i % self.n_workers]
-            futures.append(actor.place.remote(
+            # 转换参数
+            params_name = list(params_space.keys())
+            xi_list = list(xi)
+            xi_dict = dict(zip(params_name, xi_list))
+            
+            params_update = self._load_genotype(xi_dict)
+            
+            futures.append(actor.evaluate_hyper_params.remote(
                 params_update=params_update,
                 macro_lst=self.placedb.macro_lst
             ))
+            
+        # 2. 获取结果
+        results = ray.get(futures)
         
-        # 收集结果
-        results = []
-        try:
-            batch_results = ray.get(futures)
-            for macro_pos in batch_results:
-                if macro_pos:
-                    # 转换格式
-                    final_pos = {}
-                    for k, v in macro_pos.items():
-                        try:
-                            final_pos[k] = (v[0], v[1])
-                        except:
-                            final_pos[k] = tuple(v)
-                    results.append(final_pos)
-                else:
-                    results.append({})
-        except Exception as e:
-            print(f"Batch optimization error: {e}")
-            results = [{}] * len(genotypes)
+        # 3. 后处理和计算其他指标
+        macro_pos_list = []
+        metric_lists = {k: [] for k in self.eval_metrics}
         
-        return results
+        for res in results:
+            # 提取 macro_pos
+            macro_pos = {}
+            if res and "macro_pos" in res:
+                for k, v in res["macro_pos"].items():
+                    # 确保格式正确
+                    if hasattr(v, '__iter__'):
+                        macro_pos[k] = (float(v[0]), float(v[1]))
+                    else:
+                        macro_pos[k] = v
+            else:
+                # Handle failure case
+                macro_pos = {}
+
+            macro_pos_list.append(macro_pos)
+            
+            # 计算常规指标 (hpwl, regularity 等)
+            computed_metrics = comp_res(macros_pos=macro_pos, placedb=self.placedb, eval_metrics=self.eval_metrics)
+            
+            # 合并 Actor 返回的指标 (gp_hpwl, tns, wns)
+            if res:
+                computed_metrics.update(res)
+            
+            # 收集结果
+            for metric in self.eval_metrics:
+                val = computed_metrics.get(metric, 0)
+                metric_lists[metric].append(val)
+                
+        # 转换为 numpy array
+        final_results = {k: np.array(v) for k, v in metric_lists.items()}
+        
+        t_eval_solution = time.time() - t_start
+        self.t_eval_solution_total += t_eval_solution
+        
+        return final_results, macro_pos_list
 
     def __deepcopy__(self, memo=None):
         """防止深拷贝"""

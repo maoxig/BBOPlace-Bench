@@ -4,7 +4,7 @@ from src.utils.debug import *
 import numpy as np
 
 
-def comp_res(macros_pos, placedb, eval_metrics=['hpwl'], gp_evaluator = None):
+def comp_res(macros_pos, placedb, eval_metrics=['hpwl'], ) -> dict:
     if len(macros_pos) == 0:
         print("Warning: No macro placed, return INF for all results")
         return {metric: INF for metric in eval_metrics}
@@ -18,14 +18,12 @@ def comp_res(macros_pos, placedb, eval_metrics=['hpwl'], gp_evaluator = None):
         elif metric == 'regularity':
             res['regularity'] = _comp_res_regularity(macros_pos, placedb)
         elif metric == 'overlap':
-            res['overlap'] = comp_overlap(macros_pos, placedb)
-        elif metric == 'gp_hpwl' and gp_evaluator is not None:
-            res['gp_hpwl'] = gp_evaluator.evaluate(macros_pos)
+            res['overlap'] = _comp_overlap(macros_pos, placedb)
         elif metric == 'dataflow_cost':
             # to be implemented
             pass
         else:
-            raise ValueError(f"Unsupported metric: {metric}")
+            pass
     return res
 
 
@@ -111,7 +109,7 @@ def _comp_res_regularity(macro_pos, placedb):
     return (x_dis_from_edge + y_dis_from_edge) / total_area
 
 
-def comp_overlap(macro_pos, placedb):
+def _comp_overlap(macro_pos, placedb):
     overlap_area = 0
     macro_lst = list(macro_pos.keys())
     l = len(macro_lst)

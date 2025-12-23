@@ -73,7 +73,7 @@ class SPPlacer(BasicPlacer):
             dis_y = d_ver[i]
             macro_pos[macro] = (dis_x, dis_y)
         
-        return macro_pos
+        return macro_pos, {}
         
         
 

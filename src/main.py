@@ -97,6 +97,13 @@ def process_args():
         config_dict[key] = value
     
     args = SimpleNamespace(**config_dict)
+
+    if hasattr(args, "gpu"):
+        if isinstance(args.gpu, (tuple, list)):
+            args.gpu = ",".join(map(str, args.gpu))
+        else:
+            args.gpu = str(args.gpu)
+
     args.benchmark_path, args.benchmark_type, args.benchmark_base = process_benchmark_path(config_dict["benchmark"])
 
 
@@ -149,14 +156,15 @@ if __name__ == "__main__":
     num_cpus = min(args.n_cpu_max, cpus)
         
 
+    num_gpus = len(args.gpu.split(',')) if hasattr(args, "gpu") and args.gpu else 0
+
     ray.init(
         num_cpus=num_cpus,
-        num_gpus=1,
+        num_gpus=num_gpus,
         include_dashboard=False,
         logging_level=logging.ERROR,
         _temp_dir=os.path.expanduser('~/tmp'),
         ignore_reinit_error=True,
-        runtime_env={"env_vars": {"CUDA_VISIBLE_DEVICES": f"{args.gpu}"}}
     )
 
     if args.run_mode == "single":

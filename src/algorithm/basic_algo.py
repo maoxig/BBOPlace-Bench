@@ -49,6 +49,13 @@ class BasicAlgo:
         self.pareto_front = combined_Y[pareto_front_indices]
         selected_indices = pareto_front_indices[pareto_front_indices < Y.shape[0]]
 
+        macro_pos_selected = [macro_pos_all[idx] for idx in selected_indices]
+        n_eval_selected = [self.n_eval + idx + 1 for idx in range(len(selected_indices))]
+
+        # Call batch save and plot functions
+        self.placer.save_placement_batch(macro_pos_selected, n_eval_selected)
+        self.placer.plot_batch(macro_pos_selected, n_eval_selected)
+
         for idx, (y, m_pos) in enumerate(zip(Y, macro_pos_all)):
             self.n_eval += 1
             if self.n_eval > self.args.max_evals:
@@ -61,7 +68,7 @@ class BasicAlgo:
                     [f"{key}: {value}" for key, value in zip(self.eval_metrics, y)]
                 )
                 logging.info(f"n_eval: {self.n_eval}\t" + y_info)
-
+                # 这里需要并行化 TODO
                 # if len(m_pos) > 0:
                 #     self.placer.plot(
                 #         macro_pos=m_pos,
@@ -87,6 +94,7 @@ class BasicAlgo:
             self.logger.step()
 
             self.placer.save_metrics(
+                current_Y=y,
                 n_eval=self.n_eval,
                 his_best_Y=self.best_Y,
                 pop_best_Y=pop_best_Y,
