@@ -101,7 +101,7 @@ class SMSEMOA_Algo(BasicAlgo):
         if current_population is None:
             x = OPS_REGISTRY["sampling"][self.args.placer][self.args.sampling]( 
                 self.args, self.placer
-            ).do(self.problem, 1).get("X")
+            ).do(self.problem, self.args.n_population).get("X")
             sampling = Population.new(X=x) 
         else:
             sampling = current_population
