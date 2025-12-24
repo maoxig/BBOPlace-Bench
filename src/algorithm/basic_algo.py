@@ -64,6 +64,7 @@ class BasicAlgo:
             self.best_Y = np.minimum(self.best_Y, y)
             
             if idx in selected_indices:
+                # Ideal point
                 y_info = "\t".join(
                     [f"{key}: {value}" for key, value in zip(self.eval_metrics, y)]
                 )

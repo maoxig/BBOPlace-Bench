@@ -348,6 +348,7 @@ class HPOPlacer(BasicPlacer):
         t_eval_solution = time.time() - t_start
         self.t_eval_solution_total += t_eval_solution
         self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
+        self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
         return final_results, macro_pos_list
 
     def __deepcopy__(self, memo=None):
