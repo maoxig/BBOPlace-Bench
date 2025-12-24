@@ -54,6 +54,7 @@ class HPOPlacer(BasicPlacer):
     """超参数优化 Placer - 使用 Ray Actor"""
     
     DMP_CONFIG_PATH = "config/algorithm/dmp_config"
+    DMP_TEMP_BENCHMARK_PATH = "benchmarks/.tmp/HPO"
     DMP_RESULT_DIR = os.path.join(
         "results",
         "%(name)s",
@@ -61,6 +62,20 @@ class HPOPlacer(BasicPlacer):
         "%(unique_token)s",
         "dmp_results"
     )
+    AUX_FILES = [
+        "%(benchmark)s.aux",
+        "%(benchmark)s.scl",
+        "%(benchmark)s.wts",
+        "%(benchmark)s.nets",
+        "%(benchmark)s.nodes"
+    ]
+    DEF_FILES = [
+        "%(benchmark)s.lef",
+        "%(benchmark)s.v",
+        "%(benchmark)s.sdc",
+        "%(benchmark)s_Early.lib",
+        "%(benchmark)s_Late.lib"
+    ]
 
     def __init__(self, 
                  args, 
@@ -83,6 +98,9 @@ class HPOPlacer(BasicPlacer):
         self.params = DMPParams()
         self._load_dmp_config()
         
+        # 准备临时 benchmark 文件
+        self._prepare_benchmark()
+        
         # 转换 args 为字典
         self.args_dict = vars(args) if hasattr(args, '__dict__') else args
         
@@ -92,10 +110,13 @@ class HPOPlacer(BasicPlacer):
             DREAMPlaceActor.remote(
                 self.args_dict, 
                 placedb.canvas_width, 
-                placedb.canvas_height
+                placedb.canvas_height,
+                temp_benchmark_path=self._temp_benchmark_path
             ) 
             for _ in range(self.n_workers)
         ]
+        # 将 actors 赋值给 gp_evaluators 以复用 BasicPlacer 的逻辑
+        self.gp_evaluators = self.actors
         
 
     @property
@@ -111,6 +132,73 @@ class HPOPlacer(BasicPlacer):
             ROOT_DIR,
             self.DMP_RESULT_DIR % self.args.__dict__
         )
+        
+    @property
+    def _orig_benchmark_path(self):
+        ROOT_DIR = self.args.ROOT_DIR
+        return os.path.join(
+            ROOT_DIR,
+            self.args.benchmark_path
+        )
+
+    @property
+    def _temp_benchmark_path(self):
+        ROOT_DIR = self.args.ROOT_DIR
+        return os.path.join(
+            ROOT_DIR,
+            HPOPlacer.DMP_TEMP_BENCHMARK_PATH,
+            "%(benchmark)s_%(unique_token)s" % self.args.__dict__
+        )
+
+    def _link_files(self, files):
+        for file_name in files:
+            orig = os.path.join(
+                self._orig_benchmark_path,
+                file_name % self.args.__dict__)
+
+            if not os.path.exists(orig):
+                continue
+
+            link = os.path.join(
+                self._temp_benchmark_path,
+                file_name % self.args.__dict__)
+            
+            os.system(f"ln -sfr {orig} {link}")
+
+
+    def _prepare_benchmark_aux(self):
+        os.makedirs(self._temp_benchmark_path, exist_ok=True)
+        self._link_files(HPOPlacer.AUX_FILES)
+        
+        # prepare .pl
+        pl_file_path = os.path.join(
+            self._temp_benchmark_path,
+            "%(benchmark)s.pl" % self.args.__dict__
+        )
+        with open(pl_file_path, "w") as pl_file:
+            pl_file.write(self.placedb.to_pl(fix_macro=False))
+
+    def _prepare_benchmark_def(self):
+        os.makedirs(self._temp_benchmark_path, exist_ok=True)
+        self._link_files(HPOPlacer.DEF_FILES)
+        
+        # prepare .def
+        def_file_path = os.path.join(
+            self._temp_benchmark_path,
+            "%(benchmark)s.def" % self.args.__dict__
+        )
+        with open(def_file_path, "w") as def_file:
+            def_file.write(self.placedb.to_def(fix_macro=False))
+
+    def _prepare_benchmark(self):
+        type_mapping = {
+            "aux": self._prepare_benchmark_aux,
+            "def": self._prepare_benchmark_def,
+        }
+        if self.args.benchmark_type in type_mapping:
+            type_mapping[self.args.benchmark_type]()
+        else:
+            raise NotImplementedError
 
     def _load_dmp_config(self):
         """加载 DREAMPlace 配置"""
@@ -192,12 +280,21 @@ class HPOPlacer(BasicPlacer):
         """
         t_start = time.time()
         
+        start_idx = self.counter
+        self.counter += len(x)
+        
+        suffix_map = {"aux" : "pl", "def" : "def"}
+        suffix = suffix_map[self.args.benchmark_type]
+        
         # 1. 分发任务给 Actors
         futures = []
         for i, xi in enumerate(x):
             actor = self.actors[i % len(self.actors)]
             
-            # 转换参数
+            n_eval = start_idx + i + 1
+            placement_file = os.path.join(self.placement_save_path, f'{n_eval}.{suffix}')
+            figure_file = os.path.join(self.fig_save_path, f"{n_eval}.png")
+            
             params_name = list(params_space.keys())
             xi_list = list(xi)
             xi_dict = dict(zip(params_name, xi_list))
@@ -206,7 +303,9 @@ class HPOPlacer(BasicPlacer):
             
             futures.append(actor.evaluate_hyper_params.remote(
                 params_update=params_update,
-                macro_lst=self.placedb.macro_lst
+                macro_lst=self.placedb.macro_lst,
+                placement_file=placement_file,
+                figure_file=figure_file
             ))
             
         # 2. 获取结果
@@ -251,39 +350,6 @@ class HPOPlacer(BasicPlacer):
         self.t_eval_solution_total += t_eval_solution
         
         return final_results, macro_pos_list
-
-    def save_placement(self, macro_pos, n_eval):
-        """
-        覆盖 BasicPlacer 的 save_placement，使用 HPO 的 actor
-        """
-        logging.info("HPO Placer saving placement")
-        
-        suffix_map = {
-            "aux" : "pl",
-            "def" : "def"
-        }
-        suffix = suffix_map[self.args.benchmark_type]
-        file_name = os.path.join(self.placement_save_path, 
-                                f'{n_eval}.{suffix}')
-        
-        # 使用轮询方式选择 actor 进行保存，均衡负载
-        actor_idx = n_eval % len(self.actors)
-        ray.get(self.actors[actor_idx].save_placement.remote(file_name))
-        
-        self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
-
-    def plot(self, macro_pos:dict, n_eval:int):
-        """
-        覆盖 BasicPlacer 的 plot，使用 HPO 的 actor
-        """
-        logging.info("HPO Placer plotting figure")
-
-        file_name = os.path.join(self.fig_save_path, f"{n_eval}.png")
-        
-        actor_idx = n_eval % len(self.actors)
-        ray.get(self.actors[actor_idx].plot.remote(file_name))
-
-        self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
 
     def __deepcopy__(self, memo=None):
         """防止深拷贝"""

@@ -25,16 +25,18 @@ import thirdparty.dreamplace.Timer as Timer
 
 @ray.remote(num_cpus=1, num_gpus=0.1)
 class DREAMPlaceActor:
-    def __init__(self, args_dict, canvas_width, canvas_height, verbose=False):
+    def __init__(self, args_dict, canvas_width, canvas_height, temp_benchmark_path=None, verbose=False):
         """
         初始化 DREAMPlace Actor
         args_dict: 包含 args 的字典
+        temp_benchmark_path: 临时 benchmark 路径 (用于 HPO)
         """
         # 重定向输出
 
         self.args_dict = args_dict
         self.canvas_width = canvas_width
         self.canvas_height = canvas_height
+        self.temp_benchmark_path = temp_benchmark_path
         self.verbose = verbose
         
         # 初始化环境
@@ -62,20 +64,12 @@ class DREAMPlaceActor:
         modified = np.char.split(self.node_names[mask], '.').tolist()
         self.node_names[mask] = [n[0] for n in modified]
 
-        self.reset_cache()
 
-    def reset_cache(self):
-        self.cached_data = {
-            "placement": None,
-            "figure": None,}
-
-    def evaluate_macro_pos(self, macro_pos):
+    def evaluate_macro_pos(self, macro_pos, placement_file=None, figure_file=None):
         """
         评估 HPWL
         macro_pos: {macro_name: (x, y)}
         """
-        # 重置缓存
-        self.reset_cache()
         
         # 1. 更新宏单元位置
         self._update_macro_pos(macro_pos)
@@ -92,8 +86,10 @@ class DREAMPlaceActor:
         # 确保返回 float
         if isinstance(hpwl, list) or isinstance(hpwl, tuple):
              hpwl = hpwl[0]
-        self.cached_data["placement"] = (self.placedb.node_x.copy(), self.placedb.node_y.copy())
-        self.cached_data["figure"] = np.copy(self.placer.pos[0].data.clone().cpu().numpy())
+        if placement_file:
+            self.save_placement(placement_file)
+        if figure_file:
+            self.plot(figure_file)
 
         result ={ 
             "macro_pos": macro_pos,
@@ -105,8 +101,7 @@ class DREAMPlaceActor:
             result.update(timing_res)
         return result
 
-    def evaluate_hyper_params(self, params_update: dict, macro_lst: list):
-        self.reset_cache()
+    def evaluate_hyper_params(self, params_update: dict, macro_lst: list, placement_file=None, figure_file=None):
         
         if isinstance(params_update, dict):
             self.params.fromJson(params_update)
@@ -116,6 +111,11 @@ class DREAMPlaceActor:
                 th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
             )
         metrics = self.placer(self.params, self.placedb)
+        
+        if placement_file:
+            self.save_placement(placement_file)
+        if figure_file:
+            self.plot(figure_file)
         
         # 处理 macro_lst 可能存在的名称不匹配问题 (bytes vs str)
         if macro_lst and len(macro_lst) > 0:
@@ -144,8 +144,7 @@ class DREAMPlaceActor:
                 if isinstance(name, bytes):
                     clean_name = name.decode('utf-8')
                 if "DREAMPlace" in clean_name:
-                    # 尝试去除前缀等，这里简单假设包含关系
-                    # 更准确的做法是参考 _init_data 中的清理逻辑
+
                     pass
                 clean_map[clean_name] = id
                 
@@ -210,13 +209,8 @@ class DREAMPlaceActor:
         @param figname output figure name
         """
         os.makedirs(os.path.dirname(figure_name), exist_ok=True)
-        
-        pos = self.cached_data["figure"]
-        if pos is None:
-            return False
-
         # Convert numpy array back to tensor for plot function
-        pos_tensor = th.from_numpy(pos).to(self.placer.device)
+        pos_tensor = self.placer.pos[0].data.clone().cpu()# RuntimeError: !pos.is_cuda() INTERNAL ASSERT FAILED at "dreamplace/ops/draw_place/src/draw_place.cpp":39, please report a bug to PyTorch. pos must be a tensor on CPU
         
         self.placer.plot(
             self.params,
@@ -225,7 +219,6 @@ class DREAMPlaceActor:
             pos_tensor,
             figure_name, 
         )
-
         try:
             img = Image.open(figure_name)
             out = img.transpose(Image.FLIP_TOP_BOTTOM) # type: ignore
@@ -234,15 +227,10 @@ class DREAMPlaceActor:
         except Exception as e:
             print(f"Error processing image {figure_name}: {e}")
             
-        self.cached_data["figure"] = None
         return True
     
     def save_placement(self, placement_name):
-        if self.cached_data["placement"] is None:
-            return False
-            
-        self.placedb.node_x[:] = self.cached_data["placement"][0].copy()
-        self.placedb.node_y[:] = self.cached_data["placement"][1].copy()
+
         # unscale locations
         node_x, node_y = self.placedb.unscale_pl(self.params.shift_factor, 
                                                      self.params.scale_factor)
@@ -253,12 +241,6 @@ class DREAMPlaceActor:
             self.params, 
             placement_name
         )
-        return True
-
-    def save_results(self, macro_pos, output_dir, save_placement=True, save_plot=True):
-        """
-        保存结果
-        """
         return True
 
     def _update_macro_pos(self, macro_pos):
@@ -308,12 +290,15 @@ class DREAMPlaceActor:
                 benchmark_folder = key
                 break
         
-        benchmark_path = os.path.join(
-            root_dir,
-            "benchmarks",
-            benchmark_folder,
-            benchmark,
-        )
+        if self.temp_benchmark_path:
+            benchmark_path = self.temp_benchmark_path
+        else:
+            benchmark_path = os.path.join(
+                root_dir,
+                "benchmarks",
+                benchmark_folder,
+                benchmark,
+            )
 
         def suffix2path(suffix: str) -> str:
             return os.path.join(benchmark_path, f"{benchmark}") + suffix
