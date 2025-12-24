@@ -121,6 +121,7 @@ class BasicPlacer:
         macro_pos_list = [result[1] for result in results]
 
         self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
+        
         return res, macro_pos_list
 
 
@@ -243,8 +244,21 @@ class BasicPlacer:
 
         save_and_delete(placement_set_new, placement_set_old, is_placement=True)
         save_and_delete(figure_set_new, figure_set_old, is_placement=False)
+        
+        # Save counter
+        import json
+        with open(os.path.join(checkpoint_path, "placer_state.json"), "w") as f:
+            json.dump({"counter": self.counter}, f)
 
     def _load_checkpoint(self, checkpoint_path):
+        # Load counter
+        import json
+        state_file = os.path.join(checkpoint_path, "placer_state.json")
+        if os.path.exists(state_file):
+            with open(state_file, "r") as f:
+                state = json.load(f)
+                self.counter = state.get("counter", 0)
+        
         for file_name in os.listdir(os.path.join(checkpoint_path, "placements")):
             self.placement_saving_lst.append(os.path.join(self.placement_save_path, file_name))
             os.system(f"cp {os.path.join(checkpoint_path, 'placements', file_name)} "+\
@@ -258,20 +272,7 @@ class BasicPlacer:
         self.placement_saving_lst = sorted(self.placement_saving_lst, key=lambda x:int(os.path.basename(x).split('_')[0]))
         self.figure_saving_lst = sorted(self.figure_saving_lst, key=lambda x:int(os.path.basename(x).split('_')[0]))
         
-        # Restore counter
-        max_idx = 0
-        for lst in [self.placement_saving_lst, self.figure_saving_lst]:
-            for f in lst:
-                try:
-                    # Assuming format like "1.pl" or "1.png"
-                    basename = os.path.basename(f)
-                    idx = int(basename.split('.')[0])
-                    if idx > max_idx:
-                        max_idx = idx
-                except:
-                    pass
-        self.counter = max_idx
-        
+
 
     @abstractmethod
     def _genotype2phenotype(self, x):

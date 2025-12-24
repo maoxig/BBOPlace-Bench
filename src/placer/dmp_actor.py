@@ -45,9 +45,20 @@ class DREAMPlaceActor:
         
         # 设置日志级别
         if not verbose:
+            # Redirect Python stdout/stderr
             sys.stdout = open(os.devnull, 'w')
             sys.stderr = open(os.devnull, 'w')
             logging.getLogger().setLevel(logging.ERROR)
+            
+            # Redirect C-level stdout/stderr (for DREAMPlace C++ ops)
+            try:
+                devnull = os.open(os.devnull, os.O_WRONLY)
+                os.dup2(devnull, 1)
+                os.dup2(devnull, 2)
+                os.close(devnull)
+            except Exception as e:
+                # Fallback or ignore if redirection fails (e.g. in some restricted envs)
+                pass
         
         if DMPParams is None:
             raise ImportError("DREAMPlace not found!")
@@ -62,13 +73,13 @@ class DREAMPlaceActor:
         if "n_wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
            "n_tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
             self.eval_timing = True
-            self.timer = Timer.Timer()
-            self.timer(self.params, self.placedb)
-            self.timer.update_timing()
+            timer = Timer.Timer()
+            timer(self.params, self.placedb)
+            timer.update_timing()
         else:
             self.eval_timing = False
-            self.timer = None
-        self.placer = NonLinearPlace(self.params, self.placedb, timer=self.timer)
+            timer = None
+        self.placer = NonLinearPlace(self.params, self.placedb, timer=timer)
         # cache node_names for evaluator
         self.node_names = self.placedb.node_names.astype('U')
         mask = np.char.find(self.node_names, "DREAMPlace") != -1
@@ -191,7 +202,8 @@ class DREAMPlaceActor:
 
         # Perform timing analysis on current placement
         # The timing operator takes the current position as input
-        timing_op(self.placer.pos[0].data.clone().cpu())
+        pos_data = self.placer.pos[0].data.clone().cpu()
+        timing_op(pos_data)
         timing_op.timer.update_timing()
 
         # Report TNS and WNS
