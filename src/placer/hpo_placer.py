@@ -334,7 +334,6 @@ class HPOPlacer(BasicPlacer):
             # 计算常规指标 (hpwl, regularity 等)
             computed_metrics = comp_res(macros_pos=macro_pos, placedb=self.placedb, eval_metrics=self.eval_metrics)
             
-            # 合并 Actor 返回的指标 (gp_hpwl, tns, wns)
             if res:
                 computed_metrics.update(res)
             
@@ -348,7 +347,7 @@ class HPOPlacer(BasicPlacer):
         
         t_eval_solution = time.time() - t_start
         self.t_eval_solution_total += t_eval_solution
-        
+        self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
         return final_results, macro_pos_list
 
     def __deepcopy__(self, memo=None):

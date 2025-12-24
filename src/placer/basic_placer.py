@@ -20,8 +20,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 @ray.remote(num_cpus=1)
-def evaluate_placer(placer: 'BasicPlacer', x0, actor=None):
-    return placer._evaluate(x0, actor)
+def evaluate_placer(placer: 'BasicPlacer', x0, actor=None, placement_file=None, figure_file=None):
+    return placer._evaluate(x0, actor, placement_file, figure_file)
 
 class BasicPlacer:
     def __init__(self, args, placedb, eval_metrics= ["hpwl"]) -> None:
@@ -48,11 +48,12 @@ class BasicPlacer:
         self.figure_saving_lst = []
         self.n_max_saving_placement = args.n_max_saving_placement
         self.t_eval_solution_total = 0
+        self.counter = 0
         
         self.gp_evaluators = []
         if self.args.eval_gp_hpwl and self.args.placer != 'hpo':
             # 使用 n_cpu_max 作为并行度
-            n_workers = getattr(self.args, 'n_cpu_max', 1)
+            n_workers = getattr(self.args, 'n_cpu_max', 1) // 2 - 1
             print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer...")
             self.gp_evaluators = [
                 DREAMPlaceActor.remote(
@@ -62,31 +63,55 @@ class BasicPlacer:
                 ) for _ in range(n_workers)
             ]
         
-    def _evaluate(self, x, actor=None):
+    def _evaluate(self, x, actor=None, placement_file=None, figure_file=None):
         # 单个评估逻辑，主要用于非批量场景或 fallback
         res = {}
+        macro_pos = {}
         macro_pos, info = self._genotype2phenotype(x)
         res = comp_res(macros_pos=macro_pos, placedb=self.placedb, eval_metrics=self.eval_metrics)
         
-        gp_res = {}
-        if self.args.eval_gp_hpwl and actor:
-            gp_res = ray.get(actor.evaluate_macro_pos.remote(macro_pos))
-        res.update(gp_res)
+        gp_res = {} 
+        if macro_pos: # 非空
+            if self.args.eval_gp_hpwl and actor:
+                gp_res = ray.get(actor.evaluate_macro_pos.remote(macro_pos, placement_file, figure_file)) # {macro_pos: {}, eval_metric: value, ...}
+                del gp_res["macro_pos"] # { eval_metric: value, ...}
+            else:
+                # Fallback: save/plot if requested and no actor used for evaluation
+                if placement_file:
+                    n_eval = int(os.path.basename(placement_file).split('.')[0])
+                    self.save_placement(macro_pos, n_eval)
+                if figure_file:
+                    n_eval = int(os.path.basename(figure_file).split('.')[0])
+                    self.plot(macro_pos, n_eval)
+            res.update(gp_res)
             
+        else:
+            for metric in self.eval_metrics:
+                res[metric] = INF
         return res, macro_pos
     
     
     def evaluate(self, x):
         t = time.time()
         futures = []
+        
+        start_idx = self.counter
+        self.counter += len(x)
+        
+        suffix_map = {"aux" : "pl", "def" : "def"}
+        suffix = suffix_map[self.args.benchmark_type]
+
         for i, x0 in enumerate(x):
+            n_eval = start_idx + i + 1
+            placement_file = os.path.join(self.placement_save_path, f'{n_eval}.{suffix}')
+            figure_file = os.path.join(self.fig_save_path, f"{n_eval}.png")
+
             actor = None
             if self.gp_evaluators:
                 actor = self.gp_evaluators[i % len(self.gp_evaluators)]
-            futures.append(evaluate_placer.remote(self, x0, actor))
+            futures.append(evaluate_placer.remote(self, x0, actor, placement_file, figure_file))
             
         results = ray.get(futures) # {eval_metric: value, ...}, macro_pos
-        #print(results)
         t_eval_solution = time.time() - t
         self.t_eval_solution_total += t_eval_solution
 
@@ -94,22 +119,13 @@ class BasicPlacer:
         for eval_metric in self.eval_metrics:
             res[eval_metric] = np.array([result[0][eval_metric] for result in results])
         macro_pos_list = [result[1] for result in results]
-        return res, macro_pos_list
 
-    def save_placement_batch(self, 
-                            macro_pos_list: list,
-                            n_eval_list: list) -> bool:
-        """
-        批量保存多个布局文件
-        """
-        for macro_pos, n_eval in zip(macro_pos_list, n_eval_list):
-            self.save_placement(macro_pos, n_eval)
-        return True
+        self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
+        return res, macro_pos_list
 
 
     def save_placement(self, macro_pos, n_eval):
         logging.info("Placer saving placement")
-
         suffix_map = {
             "aux" : "pl",
             "def" : "def"
@@ -117,36 +133,21 @@ class BasicPlacer:
         suffix = suffix_map[self.args.benchmark_type]
         file_name = os.path.join(self.placement_save_path, 
                                 f'{n_eval}.{suffix}')
+        type_map = {
+            "aux" : write_pl,
+            "def" : write_def
+        }
+        type_map[self.args.benchmark_type](file_name, macro_pos, self.placedb)
         
-        if self.args.eval_gp_hpwl and self.gp_evaluators:
-            ray.get(self.gp_evaluators[0].save_placement.remote(file_name))
-        else:
-            type_map = {
-                "aux" : write_pl,
-                "def" : write_def
-            }
-            type_map[self.args.benchmark_type](file_name, macro_pos, self.placedb)
         
-        self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
 
-    def plot_batch(self, macro_pos_list: list, n_eval_list: list) -> bool:
-        """
-        批量绘图 (串行执行以节省资源)
-        """
-        for macro_pos, n_eval in zip(macro_pos_list, n_eval_list):
-            self.plot(macro_pos, n_eval)
-        return True
+
     
     def plot(self, macro_pos:dict, n_eval:int):
         logging.info("Placer plotting figure")
-
         file_name = os.path.join(self.fig_save_path, f"{n_eval}.png")
-        if self.args.eval_gp_hpwl and self.gp_evaluators:
-            ray.get(self.gp_evaluators[0].plot.remote(file_name))
-        else:
-            self._plot_macro(macro_pos, file_name)
+        self._plot_macro(macro_pos, file_name)
 
-        self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
 
     def _manage_saved_files(self, directory, max_files):
         """
@@ -256,6 +257,20 @@ class BasicPlacer:
 
         self.placement_saving_lst = sorted(self.placement_saving_lst, key=lambda x:int(os.path.basename(x).split('_')[0]))
         self.figure_saving_lst = sorted(self.figure_saving_lst, key=lambda x:int(os.path.basename(x).split('_')[0]))
+        
+        # Restore counter
+        max_idx = 0
+        for lst in [self.placement_saving_lst, self.figure_saving_lst]:
+            for f in lst:
+                try:
+                    # Assuming format like "1.pl" or "1.png"
+                    basename = os.path.basename(f)
+                    idx = int(basename.split('.')[0])
+                    if idx > max_idx:
+                        max_idx = idx
+                except:
+                    pass
+        self.counter = max_idx
         
 
     @abstractmethod

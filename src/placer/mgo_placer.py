@@ -65,7 +65,7 @@ class MaskGuidedOptimizationPlacer(BasicPlacer):
             available_scale_y = np.where(position_mask == 1)[1]
             if len(available_scale_x) == 0:
                 logging.info("No legal place for macro, return empty macro_pos")
-                return {}
+                return {},{}
 
             # get wire mask
             for net_name in self.placedb.node_to_net_dict[macro]:
@@ -137,7 +137,7 @@ class MaskGuidedOptimizationPlacer(BasicPlacer):
             y = scaled_y * self.grid_height
             macro_pos[macro] = (x, y)
 
-        return macro_pos
+        return macro_pos, {}
 
     def _rank_macro(self):
         macro_lst = self.placedb.macro_lst.copy()

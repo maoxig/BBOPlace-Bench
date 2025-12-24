@@ -49,12 +49,12 @@ class BasicAlgo:
         self.pareto_front = combined_Y[pareto_front_indices]
         selected_indices = pareto_front_indices[pareto_front_indices < Y.shape[0]]
 
-        macro_pos_selected = [macro_pos_all[idx] for idx in selected_indices]
-        n_eval_selected = [self.n_eval + idx + 1 for idx in range(len(selected_indices))]
+        #macro_pos_selected = [macro_pos_all[idx] for idx in selected_indices]
+        #n_eval_selected = [self.n_eval + idx + 1 for idx in range(len(selected_indices))]
 
         # Call batch save and plot functions
-        self.placer.save_placement_batch(macro_pos_selected, n_eval_selected)
-        self.placer.plot_batch(macro_pos_selected, n_eval_selected)
+        # self.placer.save_placement_batch(macro_pos_selected, n_eval_selected)
+        # self.placer.plot_batch(macro_pos_selected, n_eval_selected)
 
         for idx, (y, m_pos) in enumerate(zip(Y, macro_pos_all)):
             self.n_eval += 1
@@ -144,6 +144,7 @@ class BasicAlgo:
 
                 self.placer.save_metrics(
                     n_eval=i_eval+1,
+                    current_Y=np.array([log_data[f"{metric}/current"][i_eval] for metric in self.eval_metrics]),
                     his_best_Y=np.array([log_data[f"{metric}/his_best"][i_eval] for metric in self.eval_metrics]), 
                     pop_best_Y=np.array([log_data[f"{metric}/pop_best"][i_eval] for metric in self.eval_metrics]), 
                     pop_avg_Y=np.array([log_data[f"{metric}/pop_avg"][i_eval] for metric in self.eval_metrics]), 

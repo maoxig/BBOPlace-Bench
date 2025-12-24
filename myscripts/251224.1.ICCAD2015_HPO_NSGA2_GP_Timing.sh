@@ -1,4 +1,4 @@
-problem_formulation=mgo
+problem_formulation=hpo
 algo=nsga2
 benchmark_prefix=superblue
 
@@ -6,23 +6,21 @@ for i in 1
 do
 benchmark=${benchmark_prefix}${i}
 python ../src/main.py \
-    --gpu="0,1,2,3" \
-    --name=ICCAD2015_MGO_NSGA2_GP \
+    --name=ICCAD2015_HPO_NSGA2_GP \
     --benchmark=${benchmark} \
     --placer=${problem_formulation} \
     --algorithm=${algo} \
     --run_mode=single \
     --n_cpu_max=10 \
-    --n_population=50 \
-    --n_sampling_repeat=5 \
-    --max_evals=1000 \
+    --eval_gp_hpwl=True \
+    --n_sampling_repeat=2 \
+    --n_max_saving_placement=10 \
+    --max_evals=200 \
     --max_eval_time=72 \
     --n_macro=512 \
     --sampling=random \
-    --mutation=shuffle \
+    --mutation=random_resetting \
     --crossover=uniform \
-    --eval_metrics='["hpwl","gp_hpwl"]' \
-    --eval_gp_hpwl=True \
-    --error_redirect=False \
-    --n_max_saving_placement=5
+    --eval_metrics='["hpwl", "gp_hpwl" , "n_wns", "n_tns"]' \
+    --error_redirect=False
 done

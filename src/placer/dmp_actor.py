@@ -52,12 +52,23 @@ class DREAMPlaceActor:
         if DMPParams is None:
             raise ImportError("DREAMPlace not found!")
 
+
         self.params = DMPParams()
         self.placedb = DMPPlaceDB()
         # 设置参数并加载 DB
         self._setup_inputs(self.args_dict)
         self.placedb(self.params)
-        self.placer = NonLinearPlace(self.params, self.placedb, timer=None)
+
+        if "n_wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
+           "n_tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
+            self.eval_timing = True
+            self.timer = Timer.Timer()
+            self.timer(self.params, self.placedb)
+            self.timer.update_timing()
+        else:
+            self.eval_timing = False
+            self.timer = None
+        self.placer = NonLinearPlace(self.params, self.placedb, timer=self.timer)
         # cache node_names for evaluator
         self.node_names = self.placedb.node_names.astype('U')
         mask = np.char.find(self.node_names, "DREAMPlace") != -1
@@ -95,8 +106,7 @@ class DREAMPlaceActor:
             "macro_pos": macro_pos,
             "gp_hpwl": float(hpwl)
         }
-        if "wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
-           "tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
+        if self.eval_timing:
             timing_res = self.evaluate_timing()
             result.update(timing_res)
         return result
@@ -170,18 +180,12 @@ class DREAMPlaceActor:
             "macro_pos": macro_pos,
             "gp_hpwl": float(metrics[-1].hpwl.cpu().item())
         }
-        if "wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
-           "tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
+        if self.eval_timing:
             timing_res = self.evaluate_timing()
             result.update(timing_res)
         return result
 
     def evaluate_timing(self):
-        self.timer = Timer.Timer()
-        self.timer(self.params, self.placedb)
-        # This must be done to explicitly execute the parser builders.
-        # The parsers in OpenTimer are all in lazy mode.
-        self.timer.update_timing()
         timing_op = self.placer.op_collections.timing_op
         time_unit = timing_op.timer.time_unit()
 
@@ -197,8 +201,8 @@ class DREAMPlaceActor:
         wns = timing_op.timer.report_wns(split=1) / (time_unit * 1e15)
         
         result = {
-            "tns": float(tns),
-            "wns": float(wns)
+            "n_tns":  -float(tns),
+            "n_wns":  -float(wns)
         }
         return result
 
