@@ -51,17 +51,8 @@ params_space = {
 
 
 class HPOPlacer(BasicPlacer):
-    """超参数优化 Placer - 使用 Ray Actor"""
-    
     DMP_CONFIG_PATH = "config/algorithm/dmp_config"
     DMP_TEMP_BENCHMARK_PATH = "benchmarks/.tmp/HPO"
-    DMP_RESULT_DIR = os.path.join(
-        "results",
-        "%(name)s",
-        "%(benchmark)s",
-        "%(unique_token)s",
-        "dmp_results"
-    )
 
     def __init__(self, 
                  args, 
