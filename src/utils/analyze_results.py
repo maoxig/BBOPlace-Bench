@@ -1,9 +1,11 @@
+# filepath: /home/xp/project/BBOPlace-Bench/src/utils/analyze_results.py
 import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import argparse
 from pymoo.indicators.hv import HV
+from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 
 def load_pareto_front(result_path):
     """
@@ -105,6 +107,27 @@ def main():
     
     if pareto_front is None:
         return
+
+    # Filter objectives if user provided fewer labels than available columns
+    if args.obj_labels:
+        n_labels = len(args.obj_labels)
+        n_cols = pareto_front.shape[1]
+        
+        if n_labels < n_cols:
+            print(f"Filtering Pareto front: using first {n_labels} columns based on provided labels.")
+            # Slice to keep only the first n_labels columns
+            pareto_front = pareto_front[:, :n_labels]
+            
+            # Remove duplicates that might have been created by projection
+            pareto_front = np.unique(pareto_front, axis=0)
+            
+            # Re-calculate non-dominated front in the lower-dimensional space
+            nds = NonDominatedSorting()
+            fronts = nds.do(pareto_front)
+            # fronts[0] contains indices of the first front (non-dominated solutions)
+            pareto_front = pareto_front[fronts[0]]
+            
+            print(f"Re-calculated Pareto front size: {len(pareto_front)}")
 
     # 2. Calculate HV
     ref_point = np.array(args.ref_point) if args.ref_point else None

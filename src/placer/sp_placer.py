@@ -6,6 +6,7 @@ from .basic_placer import BasicPlacer
 from src.utils.debug import *
 
 class SPPlacer(BasicPlacer):
+    DMP_TEMP_BENCHMARK_PATH = "benchmarks/.tmp/SP"
     def __init__(self, args, placedb,  eval_metrics= ['hpwl']) -> None:
         super(SPPlacer, self).__init__(args=args, placedb=placedb, eval_metrics= eval_metrics)
 

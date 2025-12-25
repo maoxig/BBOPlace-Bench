@@ -24,6 +24,22 @@ def evaluate_placer(placer: 'BasicPlacer', x0, actor=None, placement_file=None, 
     return placer._evaluate(x0, actor, placement_file, figure_file)
 
 class BasicPlacer:
+    DMP_TEMP_BENCHMARK_PATH = "benchmarks/.tmp"
+    AUX_FILES = [
+        "%(benchmark)s.aux",
+        "%(benchmark)s.scl",
+        "%(benchmark)s.wts",
+        "%(benchmark)s.nets",
+        "%(benchmark)s.nodes"
+    ]
+    DEF_FILES = [
+        "%(benchmark)s.lef",
+        "%(benchmark)s.v",
+        "%(benchmark)s.sdc",
+        "%(benchmark)s_Early.lib",
+        "%(benchmark)s_Late.lib"
+    ]
+
     def __init__(self, args, placedb, eval_metrics= ["hpwl"]) -> None:
         self.args = args
         self.placedb = placedb
@@ -31,6 +47,8 @@ class BasicPlacer:
 
         self.canvas_width  = placedb.canvas_width
         self.canvas_height = placedb.canvas_height
+        
+        self._prepare_benchmark()
         
         self.fig_save_path       = os.path.join(args.result_path, "figures")
         self.placement_save_path = os.path.join(args.result_path, "placements")
@@ -59,10 +77,97 @@ class BasicPlacer:
                 DREAMPlaceActor.remote(
                     vars(self.args), 
                     placedb.canvas_width, 
-                    placedb.canvas_height
+                    placedb.canvas_height,
+                    temp_benchmark_path=self._temp_benchmark_path
                 ) for _ in range(n_workers)
             ]
         
+    @property
+    def _orig_benchmark_path(self):
+        ROOT_DIR = self.args.ROOT_DIR
+        return os.path.join(
+            ROOT_DIR,
+            self.args.benchmark_path
+        )
+
+    @property
+    def _temp_benchmark_path(self):
+        ROOT_DIR = self.args.ROOT_DIR
+        return os.path.join(
+            ROOT_DIR,
+            self.DMP_TEMP_BENCHMARK_PATH,
+            "%(benchmark)s" % self.args.__dict__
+        )
+
+    def _link_files(self, files):
+        for file_name in files:
+            orig = os.path.join(
+                self._orig_benchmark_path,
+                file_name % self.args.__dict__)
+
+            if not os.path.exists(orig):
+                continue
+
+            link = os.path.join(
+                self._temp_benchmark_path,
+                file_name % self.args.__dict__)
+            
+            os.system(f"ln -sfr {orig} {link}")
+
+    def _prepare_benchmark_aux(self):
+        os.makedirs(self._temp_benchmark_path, exist_ok=True)
+        self._link_files(self.AUX_FILES)
+        
+        # prepare .pl
+        pl_file_path = os.path.join(
+            self._temp_benchmark_path,
+            "%(benchmark)s.pl" % self.args.__dict__
+        )
+        
+        if os.path.exists(pl_file_path):
+            return
+
+        # only generate random placement for temp benchmark, not for real use
+        macro_pos = {}
+        for macro_name in self.placedb.macro_lst:
+             x = np.random.randint(0, self.canvas_width - self.placedb.node_info[macro_name]["size_x"] + 1)
+             y = np.random.randint(0, self.canvas_height - self.placedb.node_info[macro_name]["size_y"] + 1)
+             macro_pos[macro_name] = (x, y)
+
+        write_pl(pl_file_path, macro_pos, self.placedb)
+
+    def _prepare_benchmark_def(self):
+        os.makedirs(self._temp_benchmark_path, exist_ok=True)
+        self._link_files(self.DEF_FILES)
+        
+        # prepare .def
+        def_file_path = os.path.join(
+            self._temp_benchmark_path,
+            "%(benchmark)s.def" % self.args.__dict__
+        )
+        
+        if os.path.exists(def_file_path):
+            return
+        # only generate random placement for temp benchmark, not for real use
+        macro_pos = {}
+        for macro_name in self.placedb.macro_lst:
+             x = np.random.randint(0, self.canvas_width - self.placedb.node_info[macro_name]["size_x"] + 1)
+             y = np.random.randint(0, self.canvas_height - self.placedb.node_info[macro_name]["size_y"] + 1)
+             macro_pos[macro_name] = (x, y)
+
+        write_def(def_file_path, macro_pos, self.placedb)
+
+    def _prepare_benchmark(self):
+        type_mapping = {
+            "aux": self._prepare_benchmark_aux,
+            "def": self._prepare_benchmark_def,
+        }
+        if self.args.benchmark_type in type_mapping:
+            type_mapping[self.args.benchmark_type]()
+        else:
+            raise NotImplementedError
+
+
     def _evaluate(self, x, actor=None, placement_file=None, figure_file=None):
         # 单个评估逻辑，主要用于非批量场景或 fallback
         res = {}
@@ -120,6 +225,8 @@ class BasicPlacer:
             res[eval_metric] = np.array([result[0][eval_metric] for result in results])
         macro_pos_list = [result[1] for result in results]
 
+        # mangage figure
+        self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
         self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
         
         return res, macro_pos_list

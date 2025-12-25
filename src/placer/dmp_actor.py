@@ -25,7 +25,7 @@ import thirdparty.dreamplace.Timer as Timer
 
 @ray.remote(num_cpus=1, num_gpus=0.1)
 class DREAMPlaceActor:
-    def __init__(self, args_dict, canvas_width, canvas_height, temp_benchmark_path=None, verbose=False):
+    def __init__(self, args_dict, canvas_width, canvas_height, temp_benchmark_path, verbose=False):
         """
         初始化 DREAMPlace Actor
         args_dict: 包含 args 的字典
@@ -149,38 +149,38 @@ class DREAMPlaceActor:
                 elif isinstance(first_key, str) and isinstance(sample_macro, bytes):
                     macro_lst = [m.decode('utf-8') for m in macro_lst]
         
-        try:
-            macro_pos = self.placedb.export(self.params, macro_lst)
-        except KeyError as e:
-            # 如果仍然失败，尝试更激进的匹配（例如忽略 DREAMPlace 前缀）
-            # 这通常发生在 DREAMPlace 内部重命名了节点
-            print(f"Warning: Direct export failed ({e}), trying fuzzy match...")
-            macro_pos = {}
-            node_name2id = self.placedb.node_name2id_map
+        #try:
+        macro_pos = self.placedb.export(self.params, macro_lst)
+        # except KeyError as e:
+        #     # 如果仍然失败，尝试更激进的匹配（例如忽略 DREAMPlace 前缀）
+        #     # 这通常发生在 DREAMPlace 内部重命名了节点
+        #     print(f"Warning: Direct export failed ({e}), trying fuzzy match...")
+        #     macro_pos = {}
+        #     node_name2id = self.placedb.node_name2id_map
             
-            # 构建一个反向映射或者清理后的映射
-            clean_map = {}
-            for name, id in node_name2id.items():
-                clean_name = name
-                if isinstance(name, bytes):
-                    clean_name = name.decode('utf-8')
-                if "DREAMPlace" in clean_name:
+        #     # 构建一个反向映射或者清理后的映射
+        #     clean_map = {}
+        #     for name, id in node_name2id.items():
+        #         clean_name = name
+        #         if isinstance(name, bytes):
+        #             clean_name = name.decode('utf-8')
+        #         if "DREAMPlace" in clean_name:
 
-                    pass
-                clean_map[clean_name] = id
+        #             pass
+        #         clean_map[clean_name] = id
                 
-            # 这里我们直接使用 self.node_names (已经清理过的数组) 来查找
-            # 因为 export 本质上就是查 ID 然后找坐标
-            for macro in macro_lst:
-                macro_str = macro.decode('utf-8') if isinstance(macro, bytes) else macro
-                indices = np.where(self.node_names == macro_str)[0]
-                if len(indices) > 0:
-                    node_id = indices[0]
-                    x = self.placedb.node_x[node_id]
-                    y = self.placedb.node_y[node_id]
-                    macro_pos[macro] = [x, y]
-                else:
-                    print(f"Error: Macro {macro} not found in placedb")
+        #     # 这里我们直接使用 self.node_names (已经清理过的数组) 来查找
+        #     # 因为 export 本质上就是查 ID 然后找坐标
+        #     for macro in macro_lst:
+        #         macro_str = macro.decode('utf-8') if isinstance(macro, bytes) else macro
+        #         indices = np.where(self.node_names == macro_str)[0]
+        #         if len(indices) > 0:
+        #             node_id = indices[0]
+        #             x = self.placedb.node_x[node_id]
+        #             y = self.placedb.node_y[node_id]
+        #             macro_pos[macro] = [x, y]
+        #         else:
+        #             print(f"Error: Macro {macro} not found in placedb")
                     
         for node_name in list(macro_pos.keys()):
             x = macro_pos[node_name][0] / (self.placedb.xh - self.placedb.xl) * self.canvas_width
@@ -299,22 +299,8 @@ class DREAMPlaceActor:
         )
         self.params.load(json_path)
         ##logging.info(f"Loaded DMP config from {json_path}")
-        # 确定 benchmark 文件夹
-        benchmark_folder = None
-        for key, value in benchmark_dict.items():
-            if benchmark in value:
-                benchmark_folder = key
-                break
-        
-        if self.temp_benchmark_path:
-            benchmark_path = self.temp_benchmark_path
-        else:
-            benchmark_path = os.path.join(
-                root_dir,
-                "benchmarks",
-                benchmark_folder,
-                benchmark,
-            )
+        benchmark_path = self.temp_benchmark_path
+
 
         def suffix2path(suffix: str) -> str:
             return os.path.join(benchmark_path, f"{benchmark}") + suffix

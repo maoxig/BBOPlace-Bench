@@ -62,20 +62,6 @@ class HPOPlacer(BasicPlacer):
         "%(unique_token)s",
         "dmp_results"
     )
-    AUX_FILES = [
-        "%(benchmark)s.aux",
-        "%(benchmark)s.scl",
-        "%(benchmark)s.wts",
-        "%(benchmark)s.nets",
-        "%(benchmark)s.nodes"
-    ]
-    DEF_FILES = [
-        "%(benchmark)s.lef",
-        "%(benchmark)s.v",
-        "%(benchmark)s.sdc",
-        "%(benchmark)s_Early.lib",
-        "%(benchmark)s_Late.lib"
-    ]
 
     def __init__(self, 
                  args, 
@@ -98,9 +84,6 @@ class HPOPlacer(BasicPlacer):
         self.params = DMPParams()
         self._load_dmp_config()
         
-        # 准备临时 benchmark 文件
-        self._prepare_benchmark()
-        
         # 转换 args 为字典
         self.args_dict = vars(args) if hasattr(args, '__dict__') else args
         
@@ -121,50 +104,16 @@ class HPOPlacer(BasicPlacer):
 
     @property
     def param_dims(self) -> int:
-        """参数维度"""
         return len(params_space.items())
-
-    @property
-    def _result_dir(self) -> str:
-        """结果目录"""
-        ROOT_DIR = self.args.ROOT_DIR
-        return os.path.join(
-            ROOT_DIR,
-            self.DMP_RESULT_DIR % self.args.__dict__
-        )
         
-    @property
-    def _orig_benchmark_path(self):
-        ROOT_DIR = self.args.ROOT_DIR
-        return os.path.join(
-            ROOT_DIR,
-            self.args.benchmark_path
-        )
-
     @property
     def _temp_benchmark_path(self):
         ROOT_DIR = self.args.ROOT_DIR
         return os.path.join(
             ROOT_DIR,
             HPOPlacer.DMP_TEMP_BENCHMARK_PATH,
-            "%(benchmark)s_%(unique_token)s" % self.args.__dict__
+            "%(benchmark)s" % self.args.__dict__
         )
-
-    def _link_files(self, files):
-        for file_name in files:
-            orig = os.path.join(
-                self._orig_benchmark_path,
-                file_name % self.args.__dict__)
-
-            if not os.path.exists(orig):
-                continue
-
-            link = os.path.join(
-                self._temp_benchmark_path,
-                file_name % self.args.__dict__)
-            
-            os.system(f"ln -sfr {orig} {link}")
-
 
     def _prepare_benchmark_aux(self):
         os.makedirs(self._temp_benchmark_path, exist_ok=True)
@@ -175,6 +124,10 @@ class HPOPlacer(BasicPlacer):
             self._temp_benchmark_path,
             "%(benchmark)s.pl" % self.args.__dict__
         )
+        
+        if os.path.exists(pl_file_path):
+            return
+
         with open(pl_file_path, "w") as pl_file:
             pl_file.write(self.placedb.to_pl(fix_macro=False))
 
@@ -187,18 +140,12 @@ class HPOPlacer(BasicPlacer):
             self._temp_benchmark_path,
             "%(benchmark)s.def" % self.args.__dict__
         )
+        
+        if os.path.exists(def_file_path):
+            return
+
         with open(def_file_path, "w") as def_file:
             def_file.write(self.placedb.to_def(fix_macro=False))
-
-    def _prepare_benchmark(self):
-        type_mapping = {
-            "aux": self._prepare_benchmark_aux,
-            "def": self._prepare_benchmark_def,
-        }
-        if self.args.benchmark_type in type_mapping:
-            type_mapping[self.args.benchmark_type]()
-        else:
-            raise NotImplementedError
 
     def _load_dmp_config(self):
         """加载 DREAMPlace 配置"""

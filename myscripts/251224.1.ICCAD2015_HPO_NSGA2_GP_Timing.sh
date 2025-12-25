@@ -14,6 +14,7 @@ python ../src/main.py \
     --n_cpu_max=10 \
     --eval_gp_hpwl=True \
     --n_sampling_repeat=2 \
+    --n_population=10 \
     --n_max_saving_placement=10 \
     --max_evals=200 \
     --max_eval_time=72 \

@@ -7,6 +7,7 @@ from src.utils.constant import INF
 from src.utils.debug import *
 
 class MaskGuidedOptimizationPlacer(BasicPlacer):
+    DMP_TEMP_BENCHMARK_PATH = "benchmarks/.tmp/MGO"
     def __init__(self, args, placedb, eval_metrics= ['hpwl']) -> None:
         super(MaskGuidedOptimizationPlacer, self).__init__(args=args, placedb=placedb, eval_metrics=eval_metrics)
 
