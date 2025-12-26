@@ -1,6 +1,7 @@
 from abc import abstractmethod
 
 import numpy as np
+import math
 from src.placer.dmp_actor import DREAMPlaceActor
 from src.utils.debug import *
 from src.utils.compute_res import comp_res
@@ -114,6 +115,31 @@ class BasicPlacer:
             
             os.system(f"ln -sfr {orig} {link}")
 
+    def _generate_random_initial_placement(self):
+        n_grid_x = self.args.n_grid_x
+        n_grid_y = self.args.n_grid_y
+        grid_width = self.canvas_width / n_grid_x
+        grid_height = self.canvas_height / n_grid_y
+        
+        macro_pos = {} # macro_name -> (x, y) (physical coords)
+        
+        for macro in self.placedb.macro_lst:
+            size_x = self.placedb.node_info[macro]["size_x"]
+            size_y = self.placedb.node_info[macro]["size_y"]
+            scaled_size_x = math.ceil(size_x / grid_width)
+            scaled_size_y = math.ceil(size_y / grid_height)
+            
+            # Boundary check: max valid x index is n_grid_x - scaled_size_x
+            max_x = max(0, n_grid_x - scaled_size_x)
+            max_y = max(0, n_grid_y - scaled_size_y)
+            
+            chosen_x = np.random.randint(0, max_x + 1)
+            chosen_y = np.random.randint(0, max_y + 1)
+                
+            macro_pos[macro] = (chosen_x * grid_width, chosen_y * grid_height)
+            
+        return macro_pos
+
     def _prepare_benchmark_aux(self):
         os.makedirs(self._temp_benchmark_path, exist_ok=True)
         self._link_files(self.AUX_FILES)
@@ -128,12 +154,8 @@ class BasicPlacer:
             return
 
         # only generate random placement for temp benchmark, not for real use
-        macro_pos = {}
-        for macro_name in self.placedb.macro_lst:
-             x = np.random.randint(0, self.canvas_width - self.placedb.node_info[macro_name]["size_x"] + 1)
-             y = np.random.randint(0, self.canvas_height - self.placedb.node_info[macro_name]["size_y"] + 1)
-             macro_pos[macro_name] = (x, y)
-
+        # 这里的随机初始化提供macro pos的思路有问题，需要修复
+        macro_pos = self._generate_random_initial_placement()
         write_pl(pl_file_path, macro_pos, self.placedb)
 
     def _prepare_benchmark_def(self):
@@ -149,12 +171,9 @@ class BasicPlacer:
         if os.path.exists(def_file_path):
             return
         # only generate random placement for temp benchmark, not for real use
-        macro_pos = {}
-        for macro_name in self.placedb.macro_lst:
-             x = np.random.randint(0, self.canvas_width - self.placedb.node_info[macro_name]["size_x"] + 1)
-             y = np.random.randint(0, self.canvas_height - self.placedb.node_info[macro_name]["size_y"] + 1)
-             macro_pos[macro_name] = (x, y)
 
+          #generate random placement for temp benchmark
+        macro_pos = self._generate_random_initial_placement()
         write_def(def_file_path, macro_pos, self.placedb)
 
     def _prepare_benchmark(self):

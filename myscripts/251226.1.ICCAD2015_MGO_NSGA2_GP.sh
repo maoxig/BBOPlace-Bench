@@ -2,10 +2,11 @@ problem_formulation=mgo
 algo=nsga2
 benchmark_prefix=superblue
 
-for i in 1
+for i in 3
 do
 benchmark=${benchmark_prefix}${i}
 python ../src/main.py \
+    --gpu="0,4,5,6"\
     --name=ICCAD2015_MGO_NSGA2_GP \
     --benchmark=${benchmark} \
     --placer=${problem_formulation} \
