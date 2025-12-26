@@ -92,9 +92,12 @@ class HPOPlacer(BasicPlacer):
         # 转换 args 为字典
         self.args_dict = vars(args) if hasattr(args, '__dict__') else args
         
-        # 初始化 Ray Actors
         self.actors = [
-            DREAMPlaceActor.options(num_cpus=1, num_gpus=gpu_resources).remote(
+            DREAMPlaceActor.options(
+                num_cpus=1, 
+                num_gpus=gpu_resources,
+                max_restarts=-1  # Infinite restarts allowed
+            ).remote(
                 self.args_dict, 
                 placedb.canvas_width, 
                 placedb.canvas_height,

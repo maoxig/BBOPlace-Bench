@@ -21,8 +21,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 @ray.remote(num_cpus=1)
-def evaluate_placer(placer: 'BasicPlacer', x0, actor=None, placement_file=None, figure_file=None):
-    return placer._evaluate(x0, actor, placement_file, figure_file)
+def evaluate_placer(placer_ref, x0, actor=None, placement_file=None, figure_file=None):
+    return placer_ref._evaluate(x0, actor, placement_file, figure_file)
 
 class BasicPlacer:
     DMP_TEMP_BENCHMARK_PATH = "benchmarks/.tmp"
@@ -84,8 +84,14 @@ class BasicPlacer:
                 gpu_resources = 0.99 / actors_per_gpu
             
             print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer with {gpu_resources:.4f} GPU each...")
+            # Use max_restarts=-1 (infinite restarts) and max_task_retries=-1
+            # But crucially, use max_calls to restart actor after N calls to clear memory leaks
             self.gp_evaluators = [
-                DREAMPlaceActor.options(num_cpus=1, num_gpus=gpu_resources).remote(
+                DREAMPlaceActor.options(
+                    num_cpus=1, 
+                    num_gpus=gpu_resources,
+                    max_restarts=-1,  # Automatically restart if it crashes
+                ).remote(
                     vars(self.args), 
                     placedb.canvas_width, 
                     placedb.canvas_height,
@@ -205,7 +211,7 @@ class BasicPlacer:
         res = comp_res(macros_pos=macro_pos, placedb=self.placedb, eval_metrics=self.eval_metrics)
         
         gp_res = {} 
-        if macro_pos: # 非空
+        if macro_pos and len(macro_pos) > 0: # 非空
             if self.args.eval_gp_hpwl and actor:
                 gp_res = ray.get(actor.evaluate_macro_pos.remote(macro_pos, placement_file, figure_file)) # {macro_pos: {}, eval_metric: value, ...}
                 del gp_res["macro_pos"] # { eval_metric: value, ...}
@@ -234,6 +240,7 @@ class BasicPlacer:
         
         suffix_map = {"aux" : "pl", "def" : "def"}
         suffix = suffix_map[self.args.benchmark_type]
+        placer_ref = ray.put(self)
 
         for i, x0 in enumerate(x):
             n_eval = start_idx + i + 1
@@ -243,7 +250,7 @@ class BasicPlacer:
             actor = None
             if self.gp_evaluators:
                 actor = self.gp_evaluators[i % len(self.gp_evaluators)]
-            futures.append(evaluate_placer.remote(self, x0, actor, placement_file, figure_file))
+            futures.append(evaluate_placer.remote(placer_ref, x0, actor, placement_file, figure_file))
             
         results = ray.get(futures) # {eval_metric: value, ...}, macro_pos
         t_eval_solution = time.time() - t

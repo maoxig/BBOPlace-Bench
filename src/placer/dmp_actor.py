@@ -9,14 +9,12 @@ import logging
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
+import gc
+import resource
 from src.utils.constant import INF
 
 # 引入项目路径以便加载配置
 sys.path.append(os.path.abspath("."))
-from config.benchmark import benchmark_dict
-
-# 尝试导入 DREAMPlace
 
 import thirdparty.dreamplace.ops.place_io.place_io as place_io
 from thirdparty.dreamplace.Params import Params as DMPParams
@@ -25,7 +23,7 @@ from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
 import thirdparty.dreamplace.Timer as Timer
 
 
-@ray.remote
+@ray.remote(max_restarts=-1)
 class DREAMPlaceActor:
     def __init__(self, args_dict, canvas_width, canvas_height, temp_benchmark_path, verbose=False):
         """
@@ -33,6 +31,16 @@ class DREAMPlaceActor:
         args_dict: 包含 args 的字典
         temp_benchmark_path: 临时 benchmark 路径 (用于 HPO)
         """
+        # Set hard memory limit to 50GB to force crash and restart on leak
+        try:
+            limit = 100 * 1024 * 1024 * 1024 # 50GB
+            # RLIMIT_AS limits the maximum size of the process's virtual memory (address space).
+            # If this limit is exceeded, malloc() and mmap() functions fail.
+            # This effectively causes the process to crash (or raise MemoryError) when it grows too large.
+            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+        except Exception as e:
+            print(f"Warning: Failed to set memory limit: {e}")
+
         # 重定向输出
 
         self.args_dict = args_dict
@@ -59,13 +67,8 @@ class DREAMPlaceActor:
                 os.dup2(devnull, 2)
                 os.close(devnull)
             except Exception as e:
-                # Fallback or ignore if redirection fails (e.g. in some restricted envs)
                 pass
         
-        if DMPParams is None:
-            raise ImportError("DREAMPlace not found!")
-
-
         self.params = DMPParams()
         self.placedb = DMPPlaceDB()
         self._setup_inputs(self.args_dict)
@@ -74,19 +77,32 @@ class DREAMPlaceActor:
         if "n_wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
            "n_tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
             self.eval_timing = True
-            self.timer = Timer.Timer()
-            self.timer(self.params, self.placedb)
-            self.timer.update_timing()
+            #timer = Timer.Timer()
+            #timer(self.params, self.placedb)
+            #timer.update_timing()
         else:
             self.eval_timing = False
-            self.timer = None
-        self.placer = NonLinearPlace(self.params, self.placedb, timer=self.timer)
+            #self.timer = None
+        
+        #self.__init_placer()
+        self.placer = None 
+        #NonLinearPlace(self.params, self.placedb, timer=timer)
         # cache node_names for evaluator
         self.node_names = self.placedb.node_names.astype('U')
         mask = np.char.find(self.node_names, "DREAMPlace") != -1
         modified = np.char.split(self.node_names[mask], '.').tolist()
         self.node_names[mask] = [n[0] for n in modified]
 
+    def __init_placer(self):
+        if self.eval_timing:
+            timer = Timer.Timer()
+            timer(self.params, self.placedb)
+            timer.update_timing()
+        else:
+            timer = None
+            
+        self.placer = NonLinearPlace(self.params, self.placedb, timer=timer)
+        
 
     def evaluate_macro_pos(self, macro_pos, placement_file=None, figure_file=None):
         """
@@ -100,27 +116,22 @@ class DREAMPlaceActor:
             }
         # 1. 更新宏单元位置
         self._update_macro_pos(macro_pos)
-        if self.timer:
-            self.timer(self.params, self.placedb)
-            self.timer.update_timing()
-        self.placer = NonLinearPlace(self.params, self.placedb, timer=self.timer)
+        if self.placer is None:
+            self.__init_placer()
+
         self._update_dmp_placer()
         # 2. 运行评估
         metrics = self.placer(self.params, self.placedb)
       
-        try:
-            hpwl = metrics[-1].hpwl.cpu().item()
-        except:
-            hpwl = metrics[-1].hpwl.item()
-       
+        hpwl = metrics[-1].hpwl.cpu().item()
+
         #print(metrics)
-        # 确保返回 float
         if isinstance(hpwl, list) or isinstance(hpwl, tuple):
              hpwl = hpwl[0]
-        if placement_file:
-            self.save_placement(placement_file)
-        if figure_file:
-            self.plot(figure_file)
+        # if placement_file:
+        #     self.save_placement(placement_file)
+        # if figure_file:
+        #     self.plot(figure_file)
 
         result ={ 
             "macro_pos": macro_pos,
@@ -129,17 +140,21 @@ class DREAMPlaceActor:
         if self.eval_timing:
             timing_res = self.evaluate_timing()
             result.update(timing_res)
+
+        del self.placer
+        self.placer = None
+        gc.collect()
         return result
 
     def evaluate_hyper_params(self, params_update: dict, macro_lst: list, placement_file=None, figure_file=None):
         
         if isinstance(params_update, dict):
             self.params.fromJson(params_update)
-            
-        with th.no_grad():
-            self.placer.pos[0].data.copy_(
-                th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
-            )
+
+        if self.placer is None:
+            self.__init_placer()
+        self._update_dmp_placer()
+        
         metrics = self.placer(self.params, self.placedb)
         
         if placement_file:
@@ -151,7 +166,6 @@ class DREAMPlaceActor:
         if macro_lst and len(macro_lst) > 0:
             sample_macro = macro_lst[0]
             if sample_macro not in self.placedb.node_name2id_map:
-                # 尝试检测 map 中的 key 类型
                 first_key = next(iter(self.placedb.node_name2id_map))
                 if isinstance(first_key, bytes) and isinstance(sample_macro, str):
                     macro_lst = [m.encode('utf-8') for m in macro_lst]
@@ -172,6 +186,10 @@ class DREAMPlaceActor:
         if self.eval_timing:
             timing_res = self.evaluate_timing()
             result.update(timing_res)
+
+        del self.placer
+        self.placer = None
+        gc.collect()
         return result
 
     def evaluate_timing(self):
@@ -180,8 +198,8 @@ class DREAMPlaceActor:
 
         # Perform timing analysis on current placement
         # The timing operator takes the current position as input
-        pos_data = self.placer.pos[0].data.clone().cpu()
-        timing_op(pos_data)
+        #pos_data = self.placer.pos[0].data.clone().cpu()
+        timing_op(self.placer.pos[0].data.cpu())
         timing_op.timer.update_timing()
 
         # Report TNS and WNS
@@ -204,7 +222,7 @@ class DREAMPlaceActor:
         """
         os.makedirs(os.path.dirname(figure_name), exist_ok=True)
         # Convert numpy array back to tensor for plot function
-        pos_tensor = self.placer.pos[0].data.clone().cpu()# RuntimeError: !pos.is_cuda() INTERNAL ASSERT FAILED at "dreamplace/ops/draw_place/src/draw_place.cpp":39, please report a bug to PyTorch. pos must be a tensor on CPU
+        pos_tensor = self.placer.pos[0].data.cpu()# RuntimeError: !pos.is_cuda() INTERNAL ASSERT FAILED at "dreamplace/ops/draw_place/src/draw_place.cpp":39, please report a bug to PyTorch. pos must be a tensor on CPU
         
         self.placer.plot(
             self.params,
@@ -242,8 +260,8 @@ class DREAMPlaceActor:
             dmp_scale_factor_x, dmp_scale_factor_y = 1.0, 1.0
         else:
             # (xh - xl) / canvas_width
-            dmp_scale_factor_x = (self.placedb.xh ) / self.canvas_width # type: ignore
-            dmp_scale_factor_y = (self.placedb.yh )/ self.canvas_height # type: ignore
+            dmp_scale_factor_x = (self.placedb.xh - self.placedb.xl ) / self.canvas_width # type: ignore
+            dmp_scale_factor_y = (self.placedb.yh - self.placedb.yl) / self.canvas_height # type: ignore
 
         for macro, pos in macro_pos.items():
             index = np.where(self.node_names == macro)
