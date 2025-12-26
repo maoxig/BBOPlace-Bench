@@ -157,7 +157,8 @@ if __name__ == "__main__":
         
 
     num_gpus = len(args.gpu.split(',')) if hasattr(args, "gpu") and args.gpu else 0
-
+    args.num_gpus = num_gpus
+    args.num_cpus = num_cpus
     ray.init(
         num_cpus=num_cpus,
         num_gpus=num_gpus,

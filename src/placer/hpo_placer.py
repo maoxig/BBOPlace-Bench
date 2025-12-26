@@ -69,8 +69,22 @@ class HPOPlacer(BasicPlacer):
         super().__init__(args, placedb, eval_metrics)
         self.args = args
         self.placedb = placedb
-        self.n_workers = 4
+
+        num_cpus = getattr(self.args, 'num_cpus', 1)
+        num_gpus = getattr(self.args, 'num_gpus', 0)
+        # Reserve some CPUs for driver and tasks
+        # If we have N CPUs, we can use roughly N/2 workers to allow N/2 concurrent tasks
+        # Ensure at least 1 worker if possible
+        n_workers = max(1, num_cpus // 2 - 1)
+        # Calculate GPU resources per actor
+        gpu_resources = 0
+        if num_gpus > 0:
+            # Distribute workers across GPUs
+            actors_per_gpu = math.ceil(n_workers / num_gpus)
+            # Set resource requirement slightly less than 1/N to avoid floating point issues preventing packing
+            gpu_resources = 0.99 / actors_per_gpu
         
+        print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer with {gpu_resources:.4f} GPU each...")        
         # 加载 DMP 配置
         self.params = DMPParams()
         self._load_dmp_config()
@@ -79,9 +93,8 @@ class HPOPlacer(BasicPlacer):
         self.args_dict = vars(args) if hasattr(args, '__dict__') else args
         
         # 初始化 Ray Actors
-        print(f"Initializing {self.n_workers } DREAMPlace Actors for HPO...")
         self.actors = [
-            DREAMPlaceActor.remote(
+            DREAMPlaceActor.options(num_cpus=1, num_gpus=gpu_resources).remote(
                 self.args_dict, 
                 placedb.canvas_width, 
                 placedb.canvas_height,

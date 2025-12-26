@@ -71,11 +71,21 @@ class BasicPlacer:
         
         self.gp_evaluators = []
         if self.args.eval_gp_hpwl and self.args.placer != 'hpo':
-            # 使用 n_cpu_max 作为并行度
-            n_workers = getattr(self.args, 'n_cpu_max', 1) // 2 - 1
-            print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer...")
+            num_cpus = getattr(self.args, 'num_cpus', 1)
+            num_gpus = getattr(self.args, 'num_gpus', 0)
+            # If we have N CPUs, we can use roughly N/2 workers to allow N/2 concurrent tasks
+            n_workers = max(1, num_cpus // 2 - 1)
+            # Calculate GPU resources per actor
+            gpu_resources = 0
+            if num_gpus > 0:
+                # Distribute workers across GPUs
+                actors_per_gpu = math.ceil(n_workers / num_gpus)
+                # Set resource requirement slightly less than 1/N to avoid floating point issues preventing packing
+                gpu_resources = 0.99 / actors_per_gpu
+            
+            print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer with {gpu_resources:.4f} GPU each...")
             self.gp_evaluators = [
-                DREAMPlaceActor.remote(
+                DREAMPlaceActor.options(num_cpus=1, num_gpus=gpu_resources).remote(
                     vars(self.args), 
                     placedb.canvas_width, 
                     placedb.canvas_height,

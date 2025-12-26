@@ -25,7 +25,7 @@ from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
 import thirdparty.dreamplace.Timer as Timer
 
 
-@ray.remote(num_cpus=1, num_gpus=0.1)
+@ray.remote
 class DREAMPlaceActor:
     def __init__(self, args_dict, canvas_width, canvas_height, temp_benchmark_path, verbose=False):
         """
@@ -68,7 +68,6 @@ class DREAMPlaceActor:
 
         self.params = DMPParams()
         self.placedb = DMPPlaceDB()
-        # 设置参数并加载 DB
         self._setup_inputs(self.args_dict)
         self.placedb(self.params)
 
