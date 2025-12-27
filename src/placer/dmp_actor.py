@@ -21,21 +21,16 @@ from thirdparty.dreamplace.Params import Params as DMPParams
 from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
 from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
 import thirdparty.dreamplace.Timer as Timer
-datatypes = {
-'float32' : np.float32,
-'float64' : np.float64
-}
+
 
 @ray.remote(max_restarts=-1)
 class DREAMPlaceActor:
-    def __init__(self, args_dict, canvas_width, canvas_height, temp_benchmark_path, verbose=False,):
+    def __init__(self, args_dict, canvas_width, canvas_height, temp_benchmark_path, verbose=False):
         """
         初始化 DREAMPlace Actor
         args_dict: 包含 args 的字典
         temp_benchmark_path: 临时 benchmark 路径 (用于 HPO)
-        verbose: 是否输出详细日志
-        """ 
-
+        """
         # 重定向输出
 
         self.args_dict = args_dict
@@ -67,25 +62,18 @@ class DREAMPlaceActor:
         self.params = DMPParams()
         self.placedb = DMPPlaceDB()
         self._setup_inputs(self.args_dict)
-        self.placedb(self.params)
-        self.rawdb = self.placedb.rawdb
-
+        
         if "n_wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
            "n_tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
             self.eval_timing = True
-            #timer = Timer.Timer()
-            #timer(self.params, self.placedb)
-            #timer.update_timing()
         else:
             self.eval_timing = False
-            #self.timer = None
-            
+        
         self.placer = None 
-        if self.args_dict.get("placer", "") == "hpo":
+        if self.args_dict.get('placer', "") == 'hpo':
+            self.placedb(self.params)
             self.__init_placer()
-        #self.__init_placer()
-
-        #NonLinearPlace(self.params, self.placedb, timer=timer)
+    
         # cache node_names for evaluator
         self.node_names = self.placedb.node_names.astype('U')
         mask = np.char.find(self.node_names, "DREAMPlace") != -1
@@ -113,69 +101,33 @@ class DREAMPlaceActor:
                 "macro_pos": {},
                 "gp_hpwl": INF
             }
-        # 1. 更新宏单元位置
-        #self._update_macro_pos(macro_pos)
-        if self.args_dict["benchmark_type"] == "aux":
-            dmp_scale_factor_x, dmp_scale_factor_y = 1.0, 1.0
-        else:
-            # (xh - xl) / canvas_width
-            dmp_scale_factor_x = (self.placedb.xh - self.placedb.xl ) / self.canvas_width # type: ignore
-            dmp_scale_factor_y = (self.placedb.yh - self.placedb.yl) / self.canvas_height # type: ignore
-        placedb = DMPPlaceDB()
+        
+        self.placedb(self.params)
+        self._update_macro_pos(macro_pos)
+        if self.placer is None:
+            self.__init_placer()
 
-        for macro, pos in macro_pos.items():
-            index = np.where(self.node_names == macro)
-            pos_x = round(pos[0] * dmp_scale_factor_x)
-            pos_y = round(pos[1] * dmp_scale_factor_y)
-            self.placedb.node_x[index] = float(pos_x)
-            self.placedb.node_y[index] = float(pos_y)
-
-        node_x, node_y = self.placedb.unscale_pl(self.params.shift_factor, self.params.scale_factor)
-        place_io.PlaceIOFunction.apply(self.rawdb, node_x, node_y, all_movable=True)
-        placedb.rawdb = self.rawdb
-        placedb.dtype = datatypes[self.params.dtype]
-        placedb.initialize_from_rawdb(self.params)
-        placedb.initialize(self.params)
-        if self.eval_timing:
-            timer = Timer.Timer()
-            timer(self.params, placedb)
-            timer.update_timing()
-        else:
-            timer = None
-            
-        placer = NonLinearPlace(self.params, placedb, timer=timer)
-
-        with th.no_grad():
-            placer.pos[0].data.copy_(
-                th.from_numpy(placer._initialize_position(self.params, placedb)).to(placer.device)
-            )
+        self._update_dmp_placer()
         # 2. 运行评估
-        metrics = placer(self.params, placedb)
+        metrics = self.placer(self.params, self.placedb)
       
         hpwl = metrics[-1].hpwl.cpu().item()
 
         #print(metrics)
         if isinstance(hpwl, list) or isinstance(hpwl, tuple):
              hpwl = hpwl[0]
-        # if placement_file:
-        #     self.save_placement(placement_file)
-        # if figure_file:
-        #     self.plot(figure_file)
+        if placement_file:
+            self.save_placement(placement_file)
+        if figure_file:
+            self.plot(figure_file)
 
         result ={ 
             "macro_pos": macro_pos,
             "gp_hpwl": float(hpwl)
         }
         if self.eval_timing:
-            timing_res = self.evaluate_timing(placer)
+            timing_res = self.evaluate_timing()
             result.update(timing_res)
-        del node_x
-        del node_y
-        del timer
-        del placer
-        del placedb.rawdb
-        del placedb
-        gc.collect()
         return result
 
     def evaluate_hyper_params(self, params_update: dict, macro_lst: list, placement_file=None, figure_file=None):
@@ -183,8 +135,6 @@ class DREAMPlaceActor:
         if isinstance(params_update, dict):
             self.params.fromJson(params_update)
 
-        if self.placer is None:
-            self.__init_placer()
         self._update_dmp_placer()
         
         metrics = self.placer(self.params, self.placedb)
@@ -219,21 +169,16 @@ class DREAMPlaceActor:
             timing_res = self.evaluate_timing()
             result.update(timing_res)
 
-        del self.placer
-        self.placer = None
-        gc.collect()
         return result
 
-    def evaluate_timing(self, placer=None):
-        if placer is None:
-            placer = self.placer
-        timing_op = placer.op_collections.timing_op
+    def evaluate_timing(self):
+        timing_op = self.placer.op_collections.timing_op
         time_unit = timing_op.timer.time_unit()
 
         # Perform timing analysis on current placement
         # The timing operator takes the current position as input
         #pos_data = self.placer.pos[0].data.clone().cpu()
-        timing_op(placer.pos[0].data.cpu())
+        timing_op(self.placer.pos[0].data.cpu())
         timing_op.timer.update_timing()
 
         # Report TNS and WNS
@@ -289,7 +234,6 @@ class DREAMPlaceActor:
         )
         return True
 
-    # def _update_macro_pos(self, macro_pos):
     def _update_macro_pos(self, macro_pos):
         if self.args_dict["benchmark_type"] == "aux":
             dmp_scale_factor_x, dmp_scale_factor_y = 1.0, 1.0

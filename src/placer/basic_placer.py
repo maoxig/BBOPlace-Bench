@@ -1,10 +1,7 @@
 from abc import abstractmethod
-from tabnanny import verbose
 
 import numpy as np
 import math
-
-from requests import get
 from src.placer.dmp_actor import DREAMPlaceActor
 from src.utils.debug import *
 from src.utils.compute_res import comp_res
@@ -97,8 +94,7 @@ class BasicPlacer:
                     vars(self.args), 
                     placedb.canvas_width, 
                     placedb.canvas_height,
-                    temp_benchmark_path=self._temp_benchmark_path,
-                    # verbose = True
+                    temp_benchmark_path=self._temp_benchmark_path
                 ) for _ in range(n_workers)
             ]
         
@@ -112,25 +108,14 @@ class BasicPlacer:
 
     @property
     def _temp_benchmark_path(self):
-        # Use /dev/shm if available for faster IO
-        if os.path.exists("/dev/shm"):
-            # Use a user-specific path to avoid permission issues
-            user = os.environ.get("USERNAME", "")
-            if not user:
-                import getpass
-                user = getpass.getuser()
-            base_dir = f"/dev/shm/{user}/BBOPlace_benchmarks"
-        else:
-            ROOT_DIR = self.args.ROOT_DIR
-            base_dir = os.path.join(ROOT_DIR, self.DMP_TEMP_BENCHMARK_PATH)
-            
+        ROOT_DIR = self.args.ROOT_DIR
         return os.path.join(
-            base_dir,
+            ROOT_DIR,
+            self.DMP_TEMP_BENCHMARK_PATH,
             "%(benchmark)s" % self.args.__dict__
         )
 
     def _link_files(self, files):
-        import shutil
         for file_name in files:
             orig = os.path.join(
                 self._orig_benchmark_path,
@@ -143,12 +128,7 @@ class BasicPlacer:
                 self._temp_benchmark_path,
                 file_name % self.args.__dict__)
             
-            if os.path.exists(link):
-                if os.path.islink(link):
-                    os.unlink(link)
-                else:
-                    os.remove(link)
-            shutil.copy2(orig, link)
+            os.system(f"ln -sfr {orig} {link}")
 
     def _generate_random_initial_placement(self):
         n_grid_x = self.args.n_grid_x
