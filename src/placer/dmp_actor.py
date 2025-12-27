@@ -62,7 +62,8 @@ class DREAMPlaceActor:
         self.params = DMPParams()
         self.placedb = DMPPlaceDB()
         self._setup_inputs(self.args_dict)
-        
+        self.placedb(self.params)
+
         if "n_wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
            "n_tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
             self.eval_timing = True
@@ -71,7 +72,7 @@ class DREAMPlaceActor:
         
         self.placer = None 
         if self.args_dict.get('placer', "") == 'hpo':
-            self.placedb(self.params)
+            
             self.__init_placer()
     
         # cache node_names for evaluator
@@ -101,8 +102,6 @@ class DREAMPlaceActor:
                 "macro_pos": {},
                 "gp_hpwl": INF
             }
-        
-        self.placedb(self.params)
         self._update_macro_pos(macro_pos)
         if self.placer is None:
             self.__init_placer()

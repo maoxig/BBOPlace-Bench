@@ -75,28 +75,29 @@ class BasicPlacer:
             # If we have N CPUs, we can use roughly N/2 workers to allow N/2 concurrent tasks
             n_workers = max(1, num_cpus // 2 - 1)
             # Calculate GPU resources per actor
-            gpu_resources = 0
+            self.gpu_resources = 0
             if num_gpus > 0:
                 # Distribute workers across GPUs
                 actors_per_gpu = math.ceil(n_workers / num_gpus)
                 # Set resource requirement slightly less than 1/N to avoid floating point issues preventing packing
-                gpu_resources = 0.99 / actors_per_gpu
+                self.gpu_resources = 0.99 / actors_per_gpu
             
-            print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer with {gpu_resources:.4f} GPU each...")
+            print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer with {self.gpu_resources:.4f} GPU each...")
             # Use max_restarts=-1 (infinite restarts) and max_task_retries=-1
             # But crucially, use max_calls to restart actor after N calls to clear memory leaks
-            self.gp_evaluators = [
-                DREAMPlaceActor.options(
-                    num_cpus=1, 
-                    num_gpus=gpu_resources,
-                    max_restarts=-1,  # Automatically restart if it crashes
-                ).remote(
-                    vars(self.args), 
-                    placedb.canvas_width, 
-                    placedb.canvas_height,
-                    temp_benchmark_path=self._temp_benchmark_path
-                ) for _ in range(n_workers)
-            ]
+            self.gp_evaluators = [self._create_actor() for _ in range(n_workers)]
+
+    def _create_actor(self):
+        return DREAMPlaceActor.options(
+            num_cpus=1, 
+            num_gpus=self.gpu_resources,
+            max_restarts=-1,  # Automatically restart if it crashes
+        ).remote(
+            vars(self.args), 
+            self.placedb.canvas_width, 
+            self.placedb.canvas_height,
+            temp_benchmark_path=self._temp_benchmark_path
+        )
         
     @property
     def _orig_benchmark_path(self):
@@ -168,8 +169,6 @@ class BasicPlacer:
         if os.path.exists(pl_file_path):
             return
 
-        # only generate random placement for temp benchmark, not for real use
-        # 这里的随机初始化提供macro pos的思路有问题，需要修复
         macro_pos = self._generate_random_initial_placement()
         write_pl(pl_file_path, macro_pos, self.placedb)
 
@@ -232,7 +231,6 @@ class BasicPlacer:
     
     def evaluate(self, x):
         t = time.time()
-        futures = []
         
         start_idx = self.counter
         self.counter += len(x)
@@ -241,17 +239,86 @@ class BasicPlacer:
         suffix = suffix_map[self.args.benchmark_type]
         placer_ref = ray.put(self)
 
+        # Prepare tasks
+        tasks = []
         for i, x0 in enumerate(x):
             n_eval = start_idx + i + 1
             placement_file = os.path.join(self.placement_save_path, f'{n_eval}.{suffix}')
             figure_file = os.path.join(self.fig_save_path, f"{n_eval}.png")
+            tasks.append({
+                "x0": x0,
+                "placement_file": placement_file,
+                "figure_file": figure_file,
+                "index": i
+            })
 
-            actor = None
-            if self.gp_evaluators:
-                actor = self.gp_evaluators[i % len(self.gp_evaluators)]
-            futures.append(evaluate_placer.remote(placer_ref, x0, actor, placement_file, figure_file))
+        results = [None] * len(x)
+
+        if not self.gp_evaluators:
+            futures = []
+            for task in tasks:
+                futures.append(evaluate_placer.remote(placer_ref, task["x0"], None, task["placement_file"], task["figure_file"]))
+            results = ray.get(futures)
+        else:
+            idle_actors = list(range(len(self.gp_evaluators)))
+            restarting_actors = {} # future (ping) -> actor_index
+            busy_actors = {} # future (work) -> actor_index
             
-        results = ray.get(futures) # {eval_metric: value, ...}, macro_pos
+            pending_tasks = tasks[:] 
+            
+            while len(pending_tasks) > 0 or len(busy_actors) > 0 or len(restarting_actors) > 0:
+                # 1. Check for completed restarts
+                if restarting_actors:
+                    ready_futures, _ = ray.wait(list(restarting_actors.keys()), num_returns=len(restarting_actors), timeout=0)
+                    for f in ready_futures:
+                        actor_idx = restarting_actors.pop(f)
+                        idle_actors.append(actor_idx)
+                
+                # 2. Assign tasks to idle actors
+                while pending_tasks and idle_actors:
+                    task = pending_tasks.pop(0)
+                    actor_idx = idle_actors.pop(0)
+                    actor = self.gp_evaluators[actor_idx]
+                    
+                    future = evaluate_placer.remote(
+                        placer_ref, 
+                        task["x0"], 
+                        actor, 
+                        task["placement_file"], 
+                        task["figure_file"]
+                    )
+                    busy_actors[future] = (actor_idx, task["index"])
+                
+                # 3. Wait for work to complete
+                wait_list = list(busy_actors.keys()) + list(restarting_actors.keys())
+                if not wait_list:
+                    if not pending_tasks:
+                        break
+                    continue
+
+                done_futures, _ = ray.wait(wait_list, num_returns=1)
+                
+                for f in done_futures:
+                    if f in busy_actors:
+                        # Work completed
+                        actor_idx, task_idx = busy_actors.pop(f)
+                        results[task_idx] = ray.get(f)
+                        
+                        # Restart actor
+                        ray.kill(self.gp_evaluators[actor_idx])
+                        
+                        new_actor = self._create_actor()
+                        self.gp_evaluators[actor_idx] = new_actor
+                        
+                        # Ping to wait for initialization
+                        ping_future = new_actor.evaluate_macro_pos.remote({})
+                        restarting_actors[ping_future] = actor_idx
+                        
+                    elif f in restarting_actors:
+                        # Restart completed
+                        actor_idx = restarting_actors.pop(f)
+                        idle_actors.append(actor_idx)
+
         t_eval_solution = time.time() - t
         self.t_eval_solution_total += t_eval_solution
 
