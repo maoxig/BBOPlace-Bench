@@ -91,7 +91,6 @@ class BasicPlacer:
         return DREAMPlaceActor.options(
             num_cpus=1, 
             num_gpus=self.gpu_resources,
-            max_restarts=-1,  # Automatically restart if it crashes
         ).remote(
             vars(self.args), 
             self.placedb.canvas_width, 
@@ -302,22 +301,57 @@ class BasicPlacer:
                     if f in busy_actors:
                         # Work completed
                         actor_idx, task_idx = busy_actors.pop(f)
-                        results[task_idx] = ray.get(f)
                         
-                        # Restart actor
-                        ray.kill(self.gp_evaluators[actor_idx])
-                        
-                        new_actor = self._create_actor()
-                        self.gp_evaluators[actor_idx] = new_actor
-                        
-                        # Ping to wait for initialization
-                        ping_future = new_actor.evaluate_macro_pos.remote({})
-                        restarting_actors[ping_future] = actor_idx
+                        try:
+                            result = ray.get(f)
+                            results[task_idx] = result
+                            
+                            # Check if we need to restart the actor
+                            # result is (res_dict, macro_pos)
+                            # If macro_pos is empty, the actor wasn't used for evaluation, so no memory leak
+                            macro_pos_result = result[1]
+                            
+                            if not macro_pos_result or len(macro_pos_result) == 0:
+                                # Actor clean, return to pool immediately
+                                idle_actors.append(actor_idx)
+                            else:
+                                # Actor dirty, restart it
+                                ray.kill(self.gp_evaluators[actor_idx])
+                                
+                                new_actor = self._create_actor()
+                                self.gp_evaluators[actor_idx] = new_actor
+                                
+                                # Ping to wait for initialization
+                                ping_future = new_actor.evaluate_macro_pos.remote({})
+                                restarting_actors[ping_future] = actor_idx
+                        except Exception as e:
+                            logging.warning(f"Actor {actor_idx} failed processing task {task_idx}: {e}. Retrying...")
+                            
+                            # Kill and recreate actor
+                            ray.kill(self.gp_evaluators[actor_idx])
+                            new_actor = self._create_actor()
+                            self.gp_evaluators[actor_idx] = new_actor
+                            
+                            # Ping to wait for initialization
+                            ping_future = new_actor.evaluate_macro_pos.remote({})
+                            restarting_actors[ping_future] = actor_idx
+                            
+                            # Requeue task
+                            pending_tasks.insert(0, tasks[task_idx])
                         
                     elif f in restarting_actors:
                         # Restart completed
                         actor_idx = restarting_actors.pop(f)
-                        idle_actors.append(actor_idx)
+                        try:
+                            ray.get(f)
+                            idle_actors.append(actor_idx)
+                        except Exception as e:
+                            print(f"Actor {actor_idx} restart failed: {e}. Retrying...")
+                            ray.kill(self.gp_evaluators[actor_idx])
+                            new_actor = self._create_actor()
+                            self.gp_evaluators[actor_idx] = new_actor
+                            ping_future = new_actor.evaluate_macro_pos.remote({})
+                            restarting_actors[ping_future] = actor_idx
 
         t_eval_solution = time.time() - t
         self.t_eval_solution_total += t_eval_solution

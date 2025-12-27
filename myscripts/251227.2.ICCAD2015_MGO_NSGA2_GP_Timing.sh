@@ -12,7 +12,7 @@ python ../src/main.py \
     --placer=${problem_formulation} \
     --algorithm=${algo} \
     --run_mode=single \
-    --n_cpu_max=32 \
+    --n_cpu_max=20 \
     --n_population=50 \
     --n_sampling_repeat=5 \
     --max_evals=1000 \
