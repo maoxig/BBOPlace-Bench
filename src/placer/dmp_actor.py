@@ -62,7 +62,8 @@ class DREAMPlaceActor:
         self.params = DMPParams()
         self.placedb = DMPPlaceDB()
         self._setup_inputs(self.args_dict)
-        self.placedb(self.params)
+        
+        
 
         if "n_wns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])] or \
            "n_tns" in [m.lower() for m in self.args_dict.get("eval_metrics", [])]:
@@ -71,9 +72,11 @@ class DREAMPlaceActor:
             self.eval_timing = False
         
         self.placer = None 
-        if self.args_dict.get('placer', "") == 'hpo':
-            
+        if self.args_dict.get('placer', "") == 'hpo': # prepare everything
+            self.placedb(self.params)
             self.__init_placer()
+        else:
+            self.placedb.read(self.params) # only read rawdb and initialize pydb since we will modify rawdb and pydb
     
         # cache node_names for evaluator
         self.node_names = self.placedb.node_names.astype('U')
@@ -102,6 +105,7 @@ class DREAMPlaceActor:
                 "macro_pos": {},
                 "gp_hpwl": INF
             }
+        self._setup_dmp_scale_factor()
         self._update_macro_pos(macro_pos)
         if self.placer is None:
             self.__init_placer()
@@ -260,7 +264,16 @@ class DREAMPlaceActor:
                 th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
             )
 
-    
+    def _setup_dmp_scale_factor(self):
+        # shift and scale
+        # adjust shift_factor and scale_factor if not set
+        self.params.shift_factor[0] = self.placedb.xl
+        self.params.shift_factor[1] = self.placedb.yl
+        
+        if self.params.scale_factor == 0.0 or self.placedb.site_width != 1.0:
+            self.params.scale_factor = 1.0 / self.placedb.site_width
+        
+        self.placedb.scale(self.params.shift_factor, self.params.scale_factor)
 
     def _setup_inputs(self, args_dict):
         root_dir = args_dict["ROOT_DIR"]
