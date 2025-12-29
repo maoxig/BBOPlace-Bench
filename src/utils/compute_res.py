@@ -22,6 +22,8 @@ def comp_res(macros_pos, placedb, eval_metrics=['hpwl'], ) -> dict:
         elif metric == 'dataflow_cost':
             # to be implemented
             pass
+        elif metric == 'macro_grouping_cost':
+            res['macro_grouping_cost'] = _comp_macro_grouping_cost(macros_pos, placedb)
         else:
             pass
     return res
@@ -137,3 +139,36 @@ def _comp_overlap(macro_pos, placedb):
             overlap_area += delta_x * delta_y
     
     return overlap_area / placedb.macro_area_sum
+
+def _comp_macro_grouping_cost(macro_pos, placedb):
+    grouping_cost = 0.0
+    macro_clusters = placedb.macro_clusters
+    for cluster in macro_clusters:
+        if not cluster:
+            continue
+
+        min_x = INF
+        min_y = INF
+        max_x = float('-inf')
+        max_y = float('-inf')
+        
+        found_macro = False
+        for macro_name in cluster:
+            # 对于cluster内部的macro_name，除了直接检查，还要检查去掉.DREAMPlace.Shape0后缀的名字
+            if macro_name not in macro_pos and macro_name.replace(".DREAMPlace.Shape0", "") not in macro_pos:
+                continue
+
+            found_macro = True
+            lx, ly = macro_pos[macro_name]
+            ux = lx + placedb.node_info[macro_name]["size_x"]
+            uy = ly + placedb.node_info[macro_name]["size_y"]
+
+            min_x = min(min_x, lx)
+            min_y = min(min_y, ly)
+            max_x = max(max_x, ux)
+            max_y = max(max_y, uy)
+        
+        if found_macro:
+            grouping_cost += (max_x - min_x) * (max_y - min_y)
+
+    return grouping_cost

@@ -25,7 +25,7 @@ from utils.debug import *
 parser = argparse.ArgumentParser(description='plot parser')
 parser.add_argument("--placement_path", required=True, type=str)
 parser.add_argument("--benchmark", required=True, type=str)
-parser.add_argument("--dataset", required=True, type=str, help="choose from ['ispd2005', 'iccad2015']")
+parser.add_argument("--dataset", required=True, type=str, help="choose from ['ispd2005', 'iccad2015', 'openroad']")
 args = parser.parse_args()
 # set unique token
 unique_token = "{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
