@@ -155,14 +155,20 @@ def _comp_macro_grouping_cost(macro_pos, placedb):
         
         found_macro = False
         for macro_name in cluster:
-            # 对于cluster内部的macro_name，除了直接检查，还要检查去掉.DREAMPlace.Shape0后缀的名字
-            if macro_name not in macro_pos and macro_name.replace(".DREAMPlace.Shape0", "") not in macro_pos:
+            # Check for macro name or its variant without suffix
+            clean_name = macro_name.replace(".DREAMPlace.Shape0", "")
+            target_name = macro_name if macro_name in macro_pos else (clean_name if clean_name in macro_pos else None)
+            
+            if not target_name:
                 continue
 
             found_macro = True
-            lx, ly = macro_pos[macro_name]
-            ux = lx + placedb.node_info[macro_name]["size_x"]
-            uy = ly + placedb.node_info[macro_name]["size_y"]
+            lx, ly = macro_pos[target_name]
+            # Use the original name to look up node info if possible, otherwise fallback
+            info_name = macro_name if macro_name in placedb.node_info else clean_name
+            
+            ux = lx + placedb.node_info[info_name]["size_x"]
+            uy = ly + placedb.node_info[info_name]["size_y"]
 
             min_x = min(min_x, lx)
             min_y = min(min_y, ly)
@@ -172,7 +178,7 @@ def _comp_macro_grouping_cost(macro_pos, placedb):
         if found_macro:
             grouping_cost += (max_x - min_x) * (max_y - min_y)
 
-    return grouping_cost
+        return grouping_cost
 
 def _comp_dataflow_cost(macro_pos, placedb):
     if not hasattr(placedb, "dataflow_mat") or not hasattr(placedb, "node_name2index_map"):
@@ -186,18 +192,22 @@ def _comp_dataflow_cost(macro_pos, placedb):
 
     for macro_name, (x, y) in macro_pos.items():
         idx = -1
-        if macro_name in node_name2index_map:
-            idx = node_name2index_map[macro_name]
-        elif (macro_name + ".DREAMPlace.Shape0") in node_name2index_map:
-            idx = node_name2index_map[macro_name + ".DREAMPlace.Shape0"]
+        suffix = ".DREAMPlace.Shape0"
+        # Determine the key for index map
+        idx_key = macro_name if macro_name in node_name2index_map else (
+            macro_name + suffix if (macro_name + suffix) in node_name2index_map else None
+        )
 
-        if idx != -1:
-            size_x = placedb.node_info[macro_name]["size_x"]
-            size_y = placedb.node_info[macro_name]["size_y"]
-            center_x = x + size_x / 2.0
-            center_y = y + size_y / 2.0
-            centers.append([center_x, center_y])
-            indices.append(idx)
+        if idx_key:
+            idx = node_name2index_map[idx_key]
+            # Get node info, preferring original name
+            node_data = placedb.node_info.get(macro_name) or placedb.node_info.get(macro_name + suffix)
+
+            if node_data:
+                center_x = x + node_data["size_x"] / 2.0
+                center_y = y + node_data["size_y"] / 2.0
+                centers.append([center_x, center_y])
+                indices.append(idx)
             
     if not centers:
         return 0.0

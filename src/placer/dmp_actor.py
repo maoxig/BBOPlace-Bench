@@ -79,10 +79,8 @@ class DREAMPlaceActor:
             self.placedb.read(self.params) # only read rawdb and initialize pydb since we will modify rawdb and pydb
     
         # cache node_names for evaluator
-        self.node_names = self.placedb.node_names.astype('U')
-        mask = np.char.find(self.node_names, "DREAMPlace") != -1
-        modified = np.char.split(self.node_names[mask], '.').tolist()
-        self.node_names[mask] = [n[0] for n in modified]
+        self.node_names = self.placedb.node_names.astype("U")
+        self.node_names = np.char.replace(self.node_names, ".DREAMPlace.Shape0", "")
 
     def __init_placer(self):
         if self.eval_timing:
@@ -245,8 +243,9 @@ class DREAMPlaceActor:
             dmp_scale_factor_x = (self.placedb.xh - self.placedb.xl ) / self.canvas_width # type: ignore
             dmp_scale_factor_y = (self.placedb.yh - self.placedb.yl) / self.canvas_height # type: ignore
 
-        for macro, pos in macro_pos.items():
+        for i, (macro, pos) in enumerate(macro_pos.items()):
             index = np.where(self.node_names == macro)
+            assert len(index[0]) == 1, f"({i+1}/{len(macro_pos)}) Macro {macro} not found in placedb"
             pos_x = round(pos[0] * dmp_scale_factor_x)
             pos_y = round(pos[1] * dmp_scale_factor_y)
             self.placedb.node_x[index] = pos_x

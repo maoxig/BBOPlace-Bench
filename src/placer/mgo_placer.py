@@ -132,11 +132,13 @@ class MaskGuidedOptimizationPlacer(BasicPlacer):
             
         # unscale
         macro_pos = {}
-        for macro in placed_macro_grid_pos:
+        for i,macro in enumerate(placed_macro_grid_pos):
             scaled_x, scaled_y = placed_macro_grid_pos[macro]
             x = scaled_x * self.grid_width 
             y = scaled_y * self.grid_height
             macro_pos[macro] = (x, y)
+            #print(f"{i+1}/{len(placed_macro_grid_pos)} Set macro {macro} at grid ({scaled_x}, {scaled_y}) -> pos ({x}, {y})\n")
+
 
         return macro_pos, {}
 
