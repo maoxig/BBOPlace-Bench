@@ -307,7 +307,8 @@ class DREAMPlaceActor:
                 "late_lib_input": suffix2path("_Late.lib"),
                 "sdc_input": suffix2path(".sdc"),
             })
-        
+        elif self.args_dict.get("benchmark_type", "") == "openroad_def" and self.args_dict.get("placer", "") != "hpo":
+            self.params.def_input = self.params.def_input.replace("raw.def", "replace.def") # raw.def: all free ; replace.def: with macros fixed
         # 设置输出目录和其他参数
         self.params.fromJson({
             "plot_flag": 0,

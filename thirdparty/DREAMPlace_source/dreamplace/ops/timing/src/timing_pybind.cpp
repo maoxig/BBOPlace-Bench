@@ -197,6 +197,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .def("report_wns_el_rf", &DREAMPLACE_NAMESPACE::_report_wns_el_rf)
       .def("report_at", &DREAMPLACE_NAMESPACE::_report_at)
       .def("report_slack", &DREAMPLACE_NAMESPACE::_report_slack)
+
+      .def("get_gate_cell_mapping", &ot::Timer::get_gate_cell_mapping)
       ;
 
   m.def("forward", &DREAMPLACE_NAMESPACE::TimingCpp::forward, "Report timing forward");

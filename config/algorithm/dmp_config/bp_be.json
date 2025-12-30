@@ -1,19 +1,19 @@
 {
     "lib_input": [
-        "../benchmarks/or_cases/nangate45/lib/NangateOpenCellLibrary_typical.lib",
-        "../benchmarks/or_cases/nangate45/lib/fakeram45_512x64.lib",
-        "../benchmarks/or_cases/nangate45/lib/fakeram45_64x15.lib",
-        "../benchmarks/or_cases/nangate45/lib/fakeram45_64x96.lib"
+        "../benchmarks/openroad/nangate45/lib/NangateOpenCellLibrary_typical.lib",
+        "../benchmarks/openroad/nangate45/lib/fakeram45_512x64.lib",
+        "../benchmarks/openroad/nangate45/lib/fakeram45_64x15.lib",
+        "../benchmarks/openroad/nangate45/lib/fakeram45_64x96.lib"
     ],
     "lef_input": [
-        "../benchmarks/or_cases/nangate45/lef/NangateOpenCellLibrary.tech.lef",
-        "../benchmarks/or_cases/nangate45/lef/NangateOpenCellLibrary.macro.mod.lef",
-        "../benchmarks/or_cases/nangate45/lef/fakeram45_512x64.lef",
-        "../benchmarks/or_cases/nangate45/lef/fakeram45_64x15.lef",
-        "../benchmarks/or_cases/nangate45/lef/fakeram45_64x96.lef"
+        "../benchmarks/openroad/nangate45/lef/NangateOpenCellLibrary.tech.lef",
+        "../benchmarks/openroad/nangate45/lef/NangateOpenCellLibrary.macro.mod.lef",
+        "../benchmarks/openroad/nangate45/lef/fakeram45_512x64.lef",
+        "../benchmarks/openroad/nangate45/lef/fakeram45_64x15.lef",
+        "../benchmarks/openroad/nangate45/lef/fakeram45_64x96.lef"
     ],
-    "def_input": "../benchmarks/or_cases/bp_be/replace.def",
-    "ref_path": "../benchmarks/or_cases/bp_be/mp_out",
+    "def_input": "../benchmarks/openroad/bp_be/replace.def",
+    "ref_path": "../benchmarks/openroad/bp_be/mp_out",
     "gpu": 1,
     "num_bins_x": 1024,
     "num_bins_y": 1024,
@@ -27,7 +27,7 @@
             "optimizer": "nesterov"
         }
     ],
-    "target_density": 1.0,
+    "target_density": 0.5,
     "density_weight": 8e-5,
     "gamma": 4.0,
     "random_seed": 1000,

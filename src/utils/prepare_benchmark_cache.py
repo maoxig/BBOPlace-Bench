@@ -12,6 +12,7 @@ import time
 import logging
 import torch as th
 
+
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 THIRDPARTY_DIR = os.path.join(ROOT_DIR, "thirdparty")
 SOURCE_DIR = os.path.join(ROOT_DIR, "src")
@@ -19,9 +20,11 @@ sys.path.append(ROOT_DIR)
 sys.path.append(THIRDPARTY_DIR)
 sys.path.append(SOURCE_DIR)
 os.environ["PYTHONPATH"] = ":".join(sys.path)
+from config.benchmark import BENCHMARK_DIR
 from src.utils.read_benchmark.read_def import get_inv_scaling_ratio, get_scaling_ratio
-from thirdparty.dreamplace.Params import Params
-from thirdparty.dreamplace.PlaceDB import PlaceDB
+from src.placedb import get_node_to_net_dict
+from thirdparty.dreamplace.Params import Params as DMPParams
+from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
 from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
 import thirdparty.dreamplace.ops.place_io.place_io as place_io
 import thirdparty.dreamplace.Timer as Timer
@@ -39,11 +42,10 @@ def to_str(x):
 
 parser = argparse.ArgumentParser(description='prepare parser')
 parser.add_argument("--benchmark", required=True, type=str)
-parser.add_argument("--dataset", required=True, type=str, help="choose from ['ispd2005', 'iccad2015']")
+parser.add_argument("--dataset", required=True, type=str, help="choose from ['ispd2005', 'iccad2015', 'openroad']")
 parser.add_argument("--benchmark_path", type=str, default="")
-#parser.add_argument("--ROOT_DIR", type=str, default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 parser.add_argument("--n_macro", type=int, default=512)
-parser.add_argument("--benchmark_type", type=str, default="def", help="choose from ['aux', 'def']")
+parser.add_argument("--benchmark_type", type=str, default="def", help="choose from ['aux', 'def', 'openroad_def']")
 parser.add_argument("--gamma", type=float, default=0.95, help="gamma for PLM community detection")
 args = parser.parse_args()
 
@@ -54,9 +56,9 @@ class ProblemInstance():
 
 
         self.database = {}
-        self.dmp_params = Params()
+        self.dmp_params = DMPParams()
         self._setup_inputs(args.__dict__)
-        self.dmp_placedb = PlaceDB()
+        self.dmp_placedb = DMPPlaceDB()
         self.dmp_placedb.read(self.dmp_params)
 
         self.timer = Timer.Timer()
@@ -68,44 +70,11 @@ class ProblemInstance():
         self.max_height = self.dmp_placedb.yh - self.dmp_placedb.yl
         self.num_movable_nodes = self.dmp_placedb.num_movable_nodes
 
-        # 检查这里的max_width和max_height
-        # 对比macro placedb里面的canvas_width和canvas_height
-        print(f"max_width: {self.max_width}, max_height: {self.max_height}")
-        print(f"canvas_width: {macro_placedb.canvas_width}, canvas_height: {macro_placedb.canvas_height}")
-        scale_x, ratio_y = get_scaling_ratio(macro_placedb.database)
-        print(f"scaling ratio_x: {scale_x}, ratio_y: {ratio_y}")
-        inv_ratio_x, inv_ratio_y = get_inv_scaling_ratio(macro_placedb.database)
-        print(f"inv scaling ratio_x: {inv_ratio_x}, ratio_y: {inv_ratio_y}")
-
-
-        # TODO: Macro Info: 
-        self.macro_names = macro_placedb.macro_lst.copy()
-        # TODO: Calculate average node area
+        # -------------------- Get port info ------------------
         self.port_indices = []     
+        self.port_pos = {}
         total_area = 0
-
-        self.macro_ids = []
-        self.port_pos = []
-        for node_name in self.macro_names:
-            # Try direct lookup first
-            node_id = self.dmp_placedb.node_name2id_map.get(node_name, -1)
-            
-            # If still failed, try appending .DREAMPlace.Shape0 suffix
-            if node_id == -1:
-                suffix = ".DREAMPlace.Shape0"
-                node_name_with_suffix = node_name + suffix
-                node_id = self.dmp_placedb.node_name2id_map.get(node_name_with_suffix, -1)
-                if node_id != -1:
-                    self.macro_names[self.macro_names.index(node_name)] = node_name_with_suffix
-
-            if node_id == -1:
-                print(f"Warning: Macro '{node_name}' not found in PlaceDB.")
-                continue
-            
-            self.macro_ids.append(node_id)
-
-        print("Total macros identified: ", len(self.macro_ids))
-        # TODO: get port
+        # get port
         for node_name in self.dmp_placedb.node_names:
             node_name_str = node_name.decode('utf-8') if isinstance(node_name, bytes) else str(node_name)
             if node_name_str in self.dmp_placedb.node_name2id_map:
@@ -115,36 +84,144 @@ class ProblemInstance():
             if node < (self.dmp_placedb.num_physical_nodes - self.dmp_placedb.num_terminal_NIs):  # exclude IO ports
                 continue
             else:
-                self.port_indices.append(node)  # store the port indices
+                self.port_indices.append((node,node_name_str))  # store the port indices
+
+        avg_area = total_area / len(self.dmp_placedb.node_names)
         # print port info
         print("Total ports identified: ", len(self.port_indices))
-        scale_x, scale_y = get_inv_scaling_ratio(macro_placedb.database)
+        if args.benchmark_type == "def":
+            scale_x, scale_y = get_inv_scaling_ratio(macro_placedb.database)
+        elif args.benchmark_type == "aux":
+            scale_x, scale_y = 1.0, 1.0
+        elif args.benchmark_type == "openroad_def":
+            scale_x, scale_y = 1.0, 1.0
 
-        self.macro_names = np.array(self.macro_names).astype(np.str_) # TODO
-        self.n_macro = len(self.macro_names) # TODO
         self.node_names = self.dmp_placedb.node_names.astype(np.str_)
-        for node in self.port_indices:
+        for node, node_name_str in self.port_indices:
             raw_x = self.dmp_placedb.node_x[node]
             raw_y = self.dmp_placedb.node_y[node]
 
             pos_x = math.floor(max(0, (raw_x - scale_x) / scale_x))
             pos_y = math.floor(max(0, (raw_y - scale_y) / scale_y))
-            self.port_pos.append((pos_x, pos_y))
-        # TODO: compute macro clusters 
+            # self.port_pos.append((node_name_str, (pos_x, pos_y)))
+            self.port_pos[node_name_str] = (pos_x, pos_y)
+
+    
+        # -------------------- Get macro info ------------------
+
+        self.macro_names = []
+        self.macros = []  # index in dmp_placedb node list
+        self.macro_x = []
+        self.macro_y = []
+        self.macro_size_x = []
+        self.macro_size_y = []
+
+        if macro_placedb is not None:
+            self.macro_names = macro_placedb.macro_lst.copy()
+        else:
+            macro_placedb = MacroPlaceDB(args)
+            
+            # Calculate average area of movable nodes
+            total_area = 0
+            count = 0
+            for i in range(self.dmp_placedb.num_movable_nodes):
+                total_area += self.dmp_placedb.node_size_x[i] * self.dmp_placedb.node_size_y[i]
+                count += 1
+            avg_area = total_area / count if count > 0 else 0
+
+            for node_name in self.dmp_placedb.node_names:
+                node_name_str = node_name.decode('utf-8') if isinstance(node_name, bytes) else str(node_name)
+                if node_name_str not in self.dmp_placedb.node_name2id_map:
+                    continue
+                node = self.dmp_placedb.node_name2id_map[node_name_str]
+                
+                # Only consider movable nodes for macros
+                area = self.dmp_placedb.node_size_x[node] * self.dmp_placedb.node_size_y[node]
+                height = self.dmp_placedb.node_size_y[node]
+                is_macro = (area > 10 * avg_area or height > 2 * self.dmp_placedb.row_height)
+                if is_macro:
+                    self.macros.append(node)
+                    self.macro_names.append(node_name_str)
+                    self.macro_x.append(self.dmp_placedb.node_x[node])
+                    self.macro_y.append(self.dmp_placedb.node_y[node])
+                    self.macro_size_x.append(self.dmp_placedb.node_size_x[node])
+                    self.macro_size_y.append(self.dmp_placedb.node_size_y[node])
+
+            macro_placedb.node_info, macro_placedb.node_info_raw_id_name = self.get_node_info()
+            macro_placedb.node_cnt = len(self.macro_names)
+            macro_placedb.macro_lst = self.macro_names
+            
+            macro_placedb.canvas_lx = float(self.dmp_placedb.xl)
+            macro_placedb.canvas_ly = float(self.dmp_placedb.yl)
+            macro_placedb.canvas_ux = float(self.dmp_placedb.xh)
+            macro_placedb.canvas_uy = float(self.dmp_placedb.yh)
+            macro_placedb.canvas_width = macro_placedb.canvas_ux - macro_placedb.canvas_lx
+            macro_placedb.canvas_height = macro_placedb.canvas_uy - macro_placedb.canvas_ly
+            
+            macro_placedb.port_info = {}
+            macro_placedb.port_to_net_dict = {}
+
+            macro_placedb.net_info = self.get_net_info()
+            macro_placedb.net_cnt = len(macro_placedb.net_info)
+            macro_placedb.node_to_net_dict = get_node_to_net_dict(macro_placedb.node_info, macro_placedb.net_info)
+            
+            macro_placedb.standard_cell_name = []
+            macro_placedb.cell_total_area = float(total_area)
+            
+            macro_placedb.macro_area_sum = 0
+            for macro in macro_placedb.node_info:
+                size_x = macro_placedb.node_info[macro]["size_x"]
+                size_y = macro_placedb.node_info[macro]["size_y"]
+                macro_placedb.macro_area_sum += size_x * size_y
+
+    
+        self.n_macro = len(self.macro_names)
+
+        self.macro_ids = []
+
+        # get macro ids in dmp_placedb
+        for node_name in self.macro_names:
+            node_id = self.dmp_placedb.node_name2id_map.get(node_name, -1)
+            # If still failed, try appending .DREAMPlace.Shape0 suffix
+            if node_id == -1:
+                suffix = ".DREAMPlace.Shape0"
+                node_name_with_suffix = node_name + suffix
+                node_id = self.dmp_placedb.node_name2id_map.get(node_name_with_suffix, -1)
+                if node_id != -1:
+                    self.macro_names[self.macro_names.index(node_name)] = node_name_with_suffix
+            if node_id == -1:
+                print(f"Warning: Macro '{node_name}' not found in PlaceDB.")
+                continue
+            self.macro_ids.append(node_id)
+
+        print("Total macros identified: ", len(self.macro_ids))
+
+        # compute macro clusters 
+        self.macro_names = np.array(self.macro_names).astype(np.str_) # TODO
         self.macro_cluster_list = self.community_partition() # TODO
         print(f"Total macro clusters identified: {len(self.macro_cluster_list)}")
         # check macro clusters
         for i, cluster in enumerate(self.macro_cluster_list):
             print(f" Cluster {i}: {len(cluster)} macros")
-            print("  Macros: ", [self.node_names[macro_id] for macro_id in cluster])
-        # TODO: compute virtual connections based on dataflow
-        res,  macro2index_map = self.compute_virtual_connections(self.macro_ids, self.dmp_placedb, k_max=5)
+            print("  Macros: ", cluster)
+        # compute virtual connections based on dataflow
+        res,  macro2index_map, node_name2_index_map = self.compute_virtual_connections(self.macro_ids, self.dmp_placedb, k_max=5)
         print("Computed virtual connections based on dataflow.")
         # TODO: compute port pos rect
-        # 检查一下macro_placedb里面的node_info={macro_name : {"raw_x": , "raw_y": , ."size_x": , "size_y": }} 画出来的bounding box
-        # 然后检查port pos画出来的bounding box
-        # 假设然后基于边界（macro_placedb里面的canvas_width, height）画一个边界
-        DEBUG = False
+
+        # TODO: 记得macro cluster里面的macro的name是由DREAMPlace.Shape0后缀，返回前需要处理一下
+        macro_placedb.macro_clusters = self.macro_cluster_list
+        macro_placedb.dataflow_mat = res
+        macro_placedb.node_name2index_map = node_name2_index_map
+        macro_placedb.port_pos = self.port_pos
+
+        os.makedirs(os.path.join(BENCHMARK_DIR, ".cache"), exist_ok=True)
+        cache_dir = os.path.join(BENCHMARK_DIR, ".cache",f"{args.benchmark}_placedb.pkl")
+        with open(cache_dir, "wb") as f:
+            pickle.dump(macro_placedb, f)
+
+
+        DEBUG = True
         if DEBUG:
             import matplotlib.pyplot as plt
             import matplotlib.patches as patches
@@ -167,9 +244,10 @@ class ProblemInstance():
             # Draw macros
             print("Drawing macros...")
             for macro_name in self.macro_names:
-                macro_name = macro_name.replace(".DREAMPlace.Shape0", "")  # Remove suffix for lookup
-                if macro_name in macro_placedb.node_info:
-                    info = macro_placedb.node_info[macro_name]
+                info = macro_placedb.node_info.get(macro_name)
+                if info is None:
+                    info = macro_placedb.node_info.get(macro_name.replace(".DREAMPlace.Shape0", ""))
+                if info:
                     # Use raw coordinates from macro_placedb
                     mx, my = info["raw_x"], info["raw_y"]
                     mw, mh = info["size_x"], info["size_y"]
@@ -180,8 +258,8 @@ class ProblemInstance():
 
             # Draw ports
             print("Drawing ports...")
-            port_x = [p[0] for p in self.port_pos]
-            port_y = [p[1] for p in self.port_pos]
+            port_x = [p[1][0] for p in self.port_pos.items()]
+            port_y = [p[1][1] for p in self.port_pos.items()]
             
             # Scatter plot for ports
             ax.scatter(port_x, port_y, c='red', s=10, marker='x', label='Ports')
@@ -196,8 +274,6 @@ class ProblemInstance():
             plt.savefig(save_path, dpi=300)
             plt.close()
             print(f"Debug plot saved to {save_path}")
-
-        # TODO: 记得macro cluster里面的macro的name是由DREAMPlace.Shape0后缀，返回前需要处理一下
         return
         
     def _setup_inputs(self, args_dict):
@@ -238,7 +314,8 @@ class ProblemInstance():
                 "late_lib_input": suffix2path("_Late.lib"),
                 "sdc_input": suffix2path(".sdc"),
             })
-        
+        else:
+            pass
     
     
     def community_partition(self):
@@ -253,7 +330,7 @@ class ProblemInstance():
         for node_id, node in enumerate(self.node_names):
             if node in self.macro_names:
                 module = communities[node_id]
-                macro_cluster_dict[module].append(self.dmp_placedb.node_name2id_map[node])
+                macro_cluster_dict[module].append(node) # cache macro name
 
         # convert to List[List[node_id]]
         # filter empty clusters
@@ -479,16 +556,58 @@ class ProblemInstance():
             return res
 
         
-        for k_max in [2, 4]:
+        for k_max in [2]:
             res = compute_dataflow_mat()
             path = os.path.join(self.args.ROOT_DIR, "dataflow_info", self.benchmark, f"{k_max}")
             if not os.path.exists(path):
                 os.makedirs(path)
             np.save(os.path.join(path, "dataflow_mat.npy"), res)
-            with open(os.path.join(path, "macro2index_map.pkl"), "wb") as f:
-                pickle.dump(macro2index_map, f)
+            # with open(os.path.join(path, "macro2index_map.pkl"), "wb") as f:
+            #     pickle.dump(macro2index_map, f)
+            node_name2index_map = {}
+            for macro_id, index in macro2index_map.items():
+                macro_name = self.node_names[macro_id]
+                node_name2index_map[macro_name] = index
+            with open(os.path.join(path, "node_name2index_map.pkl"), "wb") as f:
+                pickle.dump(node_name2index_map, f)
+            
+        return res, macro2index_map, node_name2index_map
 
-        return res, macro2index_map
+    def get_node_info(self):
+        node_info = {}
+        node_info_raw_id_name ={}
+        for id, (macro_name, size_x, size_y, raw_x, raw_y) in enumerate(zip(self.macro_names, self.macro_size_x, self.macro_size_y, self.macro_x, self.macro_y)):
+            node_info[macro_name] = {"id": id, "size_x": size_x, "size_y": size_y, "raw_x": raw_x, "raw_y": raw_y, "area": size_x * size_y}
+            node_info_raw_id_name[id] = macro_name
+        
+        return node_info, node_info_raw_id_name
+
+    def get_net_info(self):
+        net_info = {}
+        for net_id, net_name in enumerate(self.dmp_placedb.net_names):
+            net_info[net_name] = {}
+            net_info[net_name]["nodes"] = {}
+            net_info[net_name]["ports"] = {}
+
+            pins = self.dmp_placedb.net2pin_map[net_id]
+            nodes = self.dmp_placedb.pin2node_map[pins]
+            offset_x = self.dmp_placedb.pin_offset_x[pins] - self.dmp_placedb.node_size_x[nodes]/2
+            offset_y = self.dmp_placedb.pin_offset_y[pins] - self.dmp_placedb.node_size_y[nodes]/2
+
+            for node, o_x, o_y in zip(nodes, offset_x, offset_y):
+                if node in self.macros:
+                    net_info[net_name]["nodes"][self.node_names[node]] = {"x_offset": o_x, "y_offset": o_y}
+
+        for net_name in list(net_info.keys()):
+            if len(net_info[net_name]["nodes"]) <= 1:
+                net_info.pop(net_name)
+        
+        net_cnt = 0
+        for net_name in net_info:
+            net_info[net_name]['id'] = net_cnt
+            net_cnt += 1
+        print("adjust net size = {}".format(len(net_info)))
+        return net_info
 
 
 
@@ -562,19 +681,6 @@ class DataflowGraphBuilder:
         int_id2 = to_internal(ext_id2)
         self.graph.addEdge(int_id1, int_id2)
 
-        # if len(self.ext2int) <= 10:
-        #     degree1 = self.graph.degree(int_id1)
-        #     degree2 = self.graph.degree(int_id2)
-        #     in_degree1 = self.graph.degreeIn(int_id1)
-        #     in_degree2 = self.graph.degreeIn(int_id2)
-        #     out_degree1 = self.graph.degreeOut(int_id1)
-        #     out_degree2 = self.graph.degreeOut(int_id2)
-        #     print(f"Edge {len(self.ext2int)}: {self.node_names[ext_id1]} -> {self.node_names[ext_id2]}")
-        #     print(f"  source {ext_id1}: degree={degree1}, in_degree={in_degree1}, out_degree={out_degree1}")
-        #     print(f"  sink {ext_id2}: degree={degree2}, in_degree={in_degree2}, out_degree={out_degree2}")
-        #     print(f"  validation: degree == out_degree? source: {degree1 == out_degree1}, sink: {degree2 == out_degree2}")
-        #     print()
-
     def save_graph(self, path):
         writer = graphio.EdgeListWriter("\t", 0)  # 分隔符、首节点编号
         writer.write(self.graph, os.path.join(path, "dataflow_graph"))
@@ -620,6 +726,9 @@ if __name__ == "__main__":
         )
     from placedb import PlaceDB as MacroPlaceDB
     # load macro placedb
-    macro_placedb = MacroPlaceDB(args)
+    if args.benchmark_type == "aux" or args.benchmark_type == "def":
+        macro_placedb = MacroPlaceDB(args)
+    else:
+        macro_placedb = None
         
     problem_instance = ProblemInstance(args, benchmark, macro_placedb=macro_placedb)

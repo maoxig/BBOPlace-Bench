@@ -20,8 +20,7 @@ def comp_res(macros_pos, placedb, eval_metrics=['hpwl'], ) -> dict:
         elif metric == 'overlap':
             res['overlap'] = _comp_overlap(macros_pos, placedb)
         elif metric == 'dataflow_cost':
-            # to be implemented
-            pass
+            res['dataflow_cost'] = _comp_dataflow_cost(macros_pos, placedb)
         elif metric == 'macro_grouping_cost':
             res['macro_grouping_cost'] = _comp_macro_grouping_cost(macros_pos, placedb)
         else:
@@ -141,6 +140,8 @@ def _comp_overlap(macro_pos, placedb):
     return overlap_area / placedb.macro_area_sum
 
 def _comp_macro_grouping_cost(macro_pos, placedb):
+    if not hasattr(placedb, "macro_clusters"):
+        return INF
     grouping_cost = 0.0
     macro_clusters = placedb.macro_clusters
     for cluster in macro_clusters:
@@ -172,3 +173,46 @@ def _comp_macro_grouping_cost(macro_pos, placedb):
             grouping_cost += (max_x - min_x) * (max_y - min_y)
 
     return grouping_cost
+
+def _comp_dataflow_cost(macro_pos, placedb):
+    if not hasattr(placedb, "dataflow_mat") or not hasattr(placedb, "node_name2index_map"):
+        return INF
+
+    dataflow_mat = placedb.dataflow_mat
+    node_name2index_map = placedb.node_name2index_map
+    
+    centers = []
+    indices = []
+
+    for macro_name, (x, y) in macro_pos.items():
+        idx = -1
+        if macro_name in node_name2index_map:
+            idx = node_name2index_map[macro_name]
+        elif (macro_name + ".DREAMPlace.Shape0") in node_name2index_map:
+            idx = node_name2index_map[macro_name + ".DREAMPlace.Shape0"]
+
+        if idx != -1:
+            size_x = placedb.node_info[macro_name]["size_x"]
+            size_y = placedb.node_info[macro_name]["size_y"]
+            center_x = x + size_x / 2.0
+            center_y = y + size_y / 2.0
+            centers.append([center_x, center_y])
+            indices.append(idx)
+            
+    if not centers:
+        return 0.0
+
+    centers = np.array(centers)
+    indices = np.array(indices)
+
+    # Extract submatrix of weights
+    W = dataflow_mat[np.ix_(indices, indices)]
+
+    # Compute pairwise L1 distances
+    diff = centers[:, np.newaxis, :] - centers[np.newaxis, :, :]
+    dists = np.sum(np.abs(diff), axis=-1)
+
+    # Compute weighted cost
+    cost = np.sum(W * dists)
+
+    return cost

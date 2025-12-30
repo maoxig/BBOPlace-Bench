@@ -28,6 +28,9 @@ class PlaceDB:
         elif self.args.benchmark_type == "def":
             self.database = {}
             placedb_info = read_def(database=self.database, benchmark_path=self.args.benchmark_path, args=self.args)
+        elif self.args.benchmark_type == "openroad_def":
+            logging.warning("OpenROAD benchmark")
+            return 
         else:
             logging.error("No such a benchmark type")
             raise NotImplementedError
@@ -144,3 +147,6 @@ class PlaceDB:
             content += def_origin.pop()
 
         return content
+    
+    def to_openroad_def(self, macro_pos=None, fix_macro=True) -> str:
+        pass

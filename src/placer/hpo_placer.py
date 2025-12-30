@@ -84,7 +84,7 @@ class HPOPlacer(BasicPlacer):
             # Set resource requirement slightly less than 1/N to avoid floating point issues preventing packing
             gpu_resources = 0.99 / actors_per_gpu
         
-        print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer with {gpu_resources:.4f} GPU each...")        
+        print(f"Initializing {n_workers} DREAMPlace Actors for HPO Placer with {gpu_resources:.4f} GPU each...")        
         # 加载 DMP 配置
         self.params = DMPParams()
         self._load_dmp_config()
@@ -101,9 +101,10 @@ class HPOPlacer(BasicPlacer):
                 self.args_dict, 
                 placedb.canvas_width, 
                 placedb.canvas_height,
-                temp_benchmark_path=self._temp_benchmark_path
+                temp_benchmark_path=self._temp_benchmark_path,
+                verbose=True
             ) 
-            for _ in range(self.n_workers)
+            for _ in range(n_workers)
         ]
         # 将 actors 赋值给 gp_evaluators 以复用 BasicPlacer 的逻辑
         self.gp_evaluators = self.actors
@@ -137,6 +138,9 @@ class HPOPlacer(BasicPlacer):
 
         with open(pl_file_path, "w") as pl_file:
             pl_file.write(self.placedb.to_pl(fix_macro=False))
+
+    def _prepare_benchmark_openroad_def(self):
+        pass
 
     def _prepare_benchmark_def(self):
         os.makedirs(self._temp_benchmark_path, exist_ok=True)
@@ -237,7 +241,7 @@ class HPOPlacer(BasicPlacer):
         start_idx = self.counter
         self.counter += len(x)
         
-        suffix_map = {"aux" : "pl", "def" : "def"}
+        suffix_map = {"aux" : "pl", "def" : "def" , "openroad_def": "def"}
         suffix = suffix_map[self.args.benchmark_type]
         
         # 1. 分发任务给 Actors

@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from tabnanny import verbose
 
 import numpy as np
 import math
@@ -6,7 +7,7 @@ from src.placer.dmp_actor import DREAMPlaceActor
 from src.utils.debug import *
 from src.utils.compute_res import comp_res
 from src.utils.read_benchmark.read_aux import write_pl
-from src.utils.read_benchmark.read_def import write_def
+from src.utils.read_benchmark.read_def import write_def, write_openroad_def
 from src.utils.constant import INF, get_n_power
 
 
@@ -95,7 +96,8 @@ class BasicPlacer:
             vars(self.args), 
             self.placedb.canvas_width, 
             self.placedb.canvas_height,
-            temp_benchmark_path=self._temp_benchmark_path
+            temp_benchmark_path=self._temp_benchmark_path,
+            verbose = True
         )
         
     @property
@@ -189,10 +191,14 @@ class BasicPlacer:
         macro_pos = self._generate_random_initial_placement()
         write_def(def_file_path, macro_pos, self.placedb)
 
+    def _prepare_benchmark_openroad_def(self):
+        pass
+
     def _prepare_benchmark(self):
         type_mapping = {
             "aux": self._prepare_benchmark_aux,
             "def": self._prepare_benchmark_def,
+            "openroad_def": self._prepare_benchmark_openroad_def,
         }
         if self.args.benchmark_type in type_mapping:
             type_mapping[self.args.benchmark_type]()
@@ -234,7 +240,7 @@ class BasicPlacer:
         start_idx = self.counter
         self.counter += len(x)
         
-        suffix_map = {"aux" : "pl", "def" : "def"}
+        suffix_map = {"aux" : "pl", "def" : "def", "openroad_def": "def"}
         suffix = suffix_map[self.args.benchmark_type]
         placer_ref = ray.put(self)
 
@@ -372,20 +378,19 @@ class BasicPlacer:
         logging.info("Placer saving placement")
         suffix_map = {
             "aux" : "pl",
-            "def" : "def"
+            "def" : "def",
+            "openroad_def": "def",
         }
         suffix = suffix_map[self.args.benchmark_type]
         file_name = os.path.join(self.placement_save_path, 
                                 f'{n_eval}.{suffix}')
         type_map = {
             "aux" : write_pl,
-            "def" : write_def
+            "def" : write_def,
+            "openroad_def": write_openroad_def,
         }
         type_map[self.args.benchmark_type](file_name, macro_pos, self.placedb)
         
-        
-
-
     
     def plot(self, macro_pos:dict, n_eval:int):
         logging.info("Placer plotting figure")
@@ -523,3 +528,4 @@ class BasicPlacer:
 
     def __deepcopy__(self, memo=None):
         return self
+    
