@@ -97,7 +97,7 @@ class BasicPlacer:
             self.placedb.canvas_width, 
             self.placedb.canvas_height,
             temp_benchmark_path=self._temp_benchmark_path,
-            verbose = True
+            verbose=getattr(self.args, 'verbose', False),
         )
         
     @property

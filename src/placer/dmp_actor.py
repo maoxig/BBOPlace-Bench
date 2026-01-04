@@ -306,8 +306,10 @@ class DREAMPlaceActor:
                 "late_lib_input": suffix2path("_Late.lib"),
                 "sdc_input": suffix2path(".sdc"),
             })
+        elif self.args_dict.get("benchmark_type", "") == "openroad_def" and self.args_dict.get("placer", "") == "hpo":
+            self.params.def_input = self.params.def_input.replace("replace.def","raw.def") # raw.def: all free ; replace.def: with macros fixed
         elif self.args_dict.get("benchmark_type", "") == "openroad_def" and self.args_dict.get("placer", "") != "hpo":
-            self.params.def_input = self.params.def_input.replace("raw.def", "replace.def") # raw.def: all free ; replace.def: with macros fixed
+            self.params.def_input = self.params.def_input.replace("raw.def","replace.def") # raw.def: all free ; replace.def: with macros fixed
         # 设置输出目录和其他参数
         self.params.fromJson({
             "plot_flag": 0,
@@ -323,3 +325,14 @@ class DREAMPlaceActor:
             "random_center_init_flag": 1,
             "figure_path": None
         })
+
+    def export_macro_pos(self, macro_lst: list):
+        node_x, node_y = self.placedb.node_x, self.placedb.node_y
+        macro_pos = {}
+        for macro_name in macro_lst:
+            id = self.placedb.node_name2id_map.get(macro_name, None)
+            if id is None:
+                id = self.placedb.node_name2id_map.get(macro_name.replace(".DREAMPlace.Shape0",""))
+            macro_pos[macro_name] = (node_x[id], node_y[id])
+        return macro_pos
+    

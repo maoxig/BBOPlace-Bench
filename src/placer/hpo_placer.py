@@ -102,7 +102,7 @@ class HPOPlacer(BasicPlacer):
                 placedb.canvas_width, 
                 placedb.canvas_height,
                 temp_benchmark_path=self._temp_benchmark_path,
-                verbose=True
+                verbose=getattr(self.args, 'verbose', False),
             ) 
             for _ in range(n_workers)
         ]
@@ -256,9 +256,7 @@ class HPOPlacer(BasicPlacer):
             params_name = list(params_space.keys())
             xi_list = list(xi)
             xi_dict = dict(zip(params_name, xi_list))
-            
             params_update = self._load_genotype(xi_dict)
-            
             futures.append(actor.evaluate_hyper_params.remote(
                 params_update=params_update,
                 macro_lst=self.placedb.macro_lst,

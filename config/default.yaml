@@ -41,3 +41,5 @@ timeout_seconds : 300
 
 
 eval_metrics : ['hpwl',]
+
+verbose : False

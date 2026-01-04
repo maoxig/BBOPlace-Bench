@@ -139,11 +139,13 @@ def single_run(args):
     logger = Logger(args=args)
     from placedb import PlaceDB
     placedb_path = os.path.join(BENCHMARK_DIR, ".cache", f"{args.benchmark}_placedb.pkl")
+    print(f"placedb_path: {placedb_path}")
     if os.path.exists(placedb_path):
         with open(placedb_path, "rb") as f:
             placedb = pickle.load(f)
         logging.info(f"Load cached PlaceDB from {placedb_path}")
     else:
+        logging.info(f"Create new PlaceDB")
         placedb = PlaceDB(args=args)
     placer = PLACER_REGISTRY[args.placer](args=args, placedb=placedb, eval_metrics= args.eval_metrics) 
     runner = ALGO_REGISTRY[args.algorithm](args=args, placer=placer, logger=logger)

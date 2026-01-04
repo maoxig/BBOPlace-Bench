@@ -3,10 +3,10 @@ algo=nsga3
 
 for i in 1
 do
-benchmark=bp
+benchmark=ariane133
 python ../src/main.py \
-    --gpu="0,1,6,7"\
-    --name=OpenROADbp_HGO_NSGA3_GP \
+    --gpu="0,1"\
+    --name=OpenROAD_HGO_NSGA3_GP \
     --benchmark=${benchmark} \
     --placer=${problem_formulation} \
     --algorithm=${algo} \
