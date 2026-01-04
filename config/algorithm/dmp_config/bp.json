@@ -16,7 +16,7 @@
         "../benchmarks/openroad/nangate45/lef/fakeram45_64x15.lef",
         "../benchmarks/openroad/nangate45/lef/fakeram45_64x96.lef"
     ],
-    "def_input": "../benchmarks/openroad/bp/raw.def",
+    "def_input": "../benchmarks/openroad/bp/replace.def",
     "ref_path": "../benchmarks/openroad/black_parrot/mp_out",
     "gpu": 1,
     "num_bins_x": 1024,
@@ -31,7 +31,7 @@
             "optimizer": "nesterov"
         }
     ],
-    "target_density": 0.5,
+    "target_density": 0.4,
     "density_weight": 8e-5,
     "gamma": 4.0,
     "random_seed": 1000,
@@ -50,7 +50,7 @@
     "sort_nets_by_degree": 0,
     "num_threads": 8,
     "sol_file_format": "DEF",
-    "macro_place_flag": 1,
+    "macro_place_flag": 0,
     "remap_flag": 1,
     "macro_criterion": "area",
     "macro_top_k_criterion_k": 132,

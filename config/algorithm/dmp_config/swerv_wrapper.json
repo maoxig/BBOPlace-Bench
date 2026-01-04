@@ -27,7 +27,7 @@
             "optimizer": "nesterov"
         }
     ],
-    "target_density": 0.5,
+    "target_density": 0.4,
     "density_weight": 8e-5,
     "gamma": 4.0,
     "random_seed": 1000,

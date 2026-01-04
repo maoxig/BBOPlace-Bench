@@ -29,3 +29,6 @@ benchmarks_bk
 !/thirdparty/DREAMPlace_source
 sheets_bk
 sock_path
+
+dataflow_info
+dataflow_graph

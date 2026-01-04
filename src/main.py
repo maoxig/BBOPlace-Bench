@@ -145,7 +145,7 @@ def single_run(args):
             placedb = pickle.load(f)
         logging.info(f"Load cached PlaceDB from {placedb_path}")
     else:
-        logging.info(f"Create new PlaceDB")
+        logging.warning(f"No cached PlaceDB found in {placedb_path}, create a new one.")
         placedb = PlaceDB(args=args)
     placer = PLACER_REGISTRY[args.placer](args=args, placedb=placedb, eval_metrics= args.eval_metrics) 
     runner = ALGO_REGISTRY[args.algorithm](args=args, placer=placer, logger=logger)
