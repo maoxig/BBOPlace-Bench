@@ -77,14 +77,14 @@ class HPOPlacer(BasicPlacer):
         # Ensure at least 1 worker if possible
         n_workers = max(1, num_cpus // 2 - 1)
         # Calculate GPU resources per actor
-        gpu_resources = 0
+        self.gpu_resources = 0
         if num_gpus > 0:
             # Distribute workers across GPUs
             actors_per_gpu = math.ceil(n_workers / num_gpus)
             # Set resource requirement slightly less than 1/N to avoid floating point issues preventing packing
-            gpu_resources = 0.99 / actors_per_gpu
+            self.gpu_resources = 0.99 / actors_per_gpu
         
-        print(f"Initializing {n_workers} DREAMPlace Actors for HPO Placer with {gpu_resources:.4f} GPU each...")        
+        print(f"Initializing {n_workers} DREAMPlace Actors for HPO Placer with {self.gpu_resources:.4f} GPU each...")        
         # 加载 DMP 配置
         self.params = DMPParams()
         self._load_dmp_config()
@@ -92,22 +92,23 @@ class HPOPlacer(BasicPlacer):
         # 转换 args 为字典
         self.args_dict = vars(args) if hasattr(args, '__dict__') else args
         
-        self.actors = [
-            DREAMPlaceActor.options(
-                num_cpus=1, 
-                num_gpus=gpu_resources,
-                max_restarts=-1  # Infinite restarts allowed
-            ).remote(
-                self.args_dict, 
-                placedb.canvas_width, 
-                placedb.canvas_height,
-                temp_benchmark_path=self._temp_benchmark_path,
-                verbose=getattr(self.args, 'verbose', False),
-            ) 
-            for _ in range(n_workers)
-        ]
+        self.actors = [self._create_actor() for _ in range(n_workers)]
         # 将 actors 赋值给 gp_evaluators 以复用 BasicPlacer 的逻辑
         self.gp_evaluators = self.actors
+        
+
+    def _create_actor(self):
+        return DREAMPlaceActor.options(
+            num_cpus=1, 
+            num_gpus=self.gpu_resources,
+            max_restarts=-1  # Infinite restarts allowed
+        ).remote(
+            self.args_dict, 
+            self.placedb.canvas_width, 
+            self.placedb.canvas_height,
+            temp_benchmark_path=self._temp_benchmark_path,
+            verbose=getattr(self.args, 'verbose', False),
+        )
         
 
     @property
@@ -234,7 +235,7 @@ class HPOPlacer(BasicPlacer):
 
     def evaluate(self, x):
         """
-        并行评估种群 - 使用 Actor Pool
+        并行评估种群 - 使用 Actor Pool (Robust Version)
         """
         t_start = time.time()
         
@@ -244,11 +245,9 @@ class HPOPlacer(BasicPlacer):
         suffix_map = {"aux" : "pl", "def" : "def" , "openroad_def": "def"}
         suffix = suffix_map[self.args.benchmark_type]
         
-        # 1. 分发任务给 Actors
-        futures = []
+        # Prepare tasks
+        tasks = []
         for i, xi in enumerate(x):
-            actor = self.actors[i % len(self.actors)]
-            
             n_eval = start_idx + i + 1
             placement_file = os.path.join(self.placement_save_path, f'{n_eval}.{suffix}')
             figure_file = os.path.join(self.fig_save_path, f"{n_eval}.png")
@@ -257,15 +256,102 @@ class HPOPlacer(BasicPlacer):
             xi_list = list(xi)
             xi_dict = dict(zip(params_name, xi_list))
             params_update = self._load_genotype(xi_dict)
-            futures.append(actor.evaluate_hyper_params.remote(
-                params_update=params_update,
-                macro_lst=self.placedb.macro_lst,
-                placement_file=placement_file,
-                figure_file=figure_file
-            ))
             
-        # 2. 获取结果
-        results = ray.get(futures)
+            tasks.append({
+                "params_update": params_update,
+                "placement_file": placement_file,
+                "figure_file": figure_file,
+                "index": i
+            })
+
+        results = [None] * len(x)
+        
+        idle_actors = list(range(len(self.actors)))
+        restarting_actors = {} # future (ping) -> actor_index
+        busy_actors = {} # future (work) -> (actor_index, task_index)
+        
+        pending_tasks = tasks[:] 
+        
+        while len(pending_tasks) > 0 or len(busy_actors) > 0 or len(restarting_actors) > 0:
+            # 1. Check for completed restarts
+            if restarting_actors:
+                ready_futures, _ = ray.wait(list(restarting_actors.keys()), num_returns=len(restarting_actors), timeout=0)
+                for f in ready_futures:
+                    actor_idx = restarting_actors.pop(f)
+                    try:
+                        ray.get(f)
+                        idle_actors.append(actor_idx)
+                    except Exception as e:
+                        print(f"Actor {actor_idx} restart failed: {e}. Retrying...")
+                        ray.kill(self.actors[actor_idx])
+                        new_actor = self._create_actor()
+                        self.actors[actor_idx] = new_actor
+                        ping_future = new_actor.evaluate_macro_pos.remote({}) # Ping
+                        restarting_actors[ping_future] = actor_idx
+            
+            # 2. Assign tasks to idle actors
+            while pending_tasks and idle_actors:
+                task = pending_tasks.pop(0)
+                actor_idx = idle_actors.pop(0)
+                actor = self.actors[actor_idx]
+                
+                future = actor.evaluate_hyper_params.remote(
+                    params_update=task["params_update"],
+                    macro_lst=self.placedb.macro_lst,
+                    placement_file=task["placement_file"],
+                    figure_file=task["figure_file"]
+                )
+                busy_actors[future] = (actor_idx, task["index"])
+            
+            # 3. Wait for work to complete
+            wait_list = list(busy_actors.keys()) + list(restarting_actors.keys())
+            if not wait_list:
+                if not pending_tasks:
+                    break
+                continue
+
+            done_futures, _ = ray.wait(wait_list, num_returns=1)
+            
+            for f in done_futures:
+                if f in busy_actors:
+                    # Work completed
+                    actor_idx, task_idx = busy_actors.pop(f)
+                    
+                    try:
+                        result = ray.get(f)
+                        results[task_idx] = result
+                        
+                        # Check if we need to restart the actor
+                        # HPO Placer only needs restart on crash, not on dirty state
+                        idle_actors.append(actor_idx)
+                    except Exception as e:
+                        logging.warning(f"Actor {actor_idx} failed processing task {task_idx}: {e}. Retrying...")
+                        
+                        # Kill and recreate actor
+                        ray.kill(self.actors[actor_idx])
+                        new_actor = self._create_actor()
+                        self.actors[actor_idx] = new_actor
+                        
+                        # Ping to wait for initialization
+                        ping_future = new_actor.evaluate_macro_pos.remote({})
+                        restarting_actors[ping_future] = actor_idx
+                        
+                        # Requeue task
+                        pending_tasks.insert(0, tasks[task_idx])
+                    
+                elif f in restarting_actors:
+                    if f in restarting_actors: 
+                        actor_idx = restarting_actors.pop(f)
+                        try:
+                            ray.get(f)
+                            idle_actors.append(actor_idx)
+                        except Exception as e:
+                            print(f"Actor {actor_idx} restart failed: {e}. Retrying...")
+                            ray.kill(self.actors[actor_idx])
+                            new_actor = self._create_actor()
+                            self.actors[actor_idx] = new_actor
+                            ping_future = new_actor.evaluate_macro_pos.remote({})
+                            restarting_actors[ping_future] = actor_idx
         
         # 3. 后处理和计算其他指标
         macro_pos_list = []

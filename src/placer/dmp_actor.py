@@ -155,7 +155,7 @@ class DREAMPlaceActor:
                 elif isinstance(first_key, str) and isinstance(sample_macro, bytes):
                     macro_lst = [m.decode('utf-8') for m in macro_lst]
         
-        macro_pos = self.placedb.export(self.params, macro_lst)
+        macro_pos = self.export_macro_pos(macro_lst)
                     
         for node_name in list(macro_pos.keys()):
             x = macro_pos[node_name][0] / (self.placedb.xh - self.placedb.xl) * self.canvas_width
