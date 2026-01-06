@@ -10,14 +10,14 @@ REGISTRY = {}
 
 REGISTRY["sampling"] = {
     "mgo" : {
-        "single_random": sampling.GrideGuideSingleRandomSampling,
-        'random' : sampling.GrideGuideRandomSampling,
-        "spiral" : sampling.GrideGuideSpiralSampling,
+        "single_random": sampling.GridGuideSingleRandomSampling,
+        'random' : sampling.GridGuideRandomSampling,
+        "spiral" : sampling.GridGuideSpiralSampling,
     },
     "vmgo" : {
-        "single_random": sampling.GrideGuideSingleRandomSampling,
-        'random' : sampling.GrideGuideRandomSampling,
-        "spiral" : sampling.GrideGuideSpiralSampling,
+        "single_random": sampling.GridGuideSingleRandomSampling,
+        'random' : sampling.GridGuideRandomSampling,
+        "spiral" : sampling.GridGuideSpiralSampling,
     },
     "sp" : {
         "random" : sampling.SPRandomSampling,

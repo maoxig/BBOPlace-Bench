@@ -13,8 +13,8 @@ def comp_res(macros_pos, placedb, eval_metrics=['hpwl'], ) -> dict:
     for metric in eval_metrics:
         if metric == 'hpwl':
             res['hpwl'] = _comp_res_hpwl(net_hpwl, placedb)
-        elif metric == 'congestion':
-            res['congestion'] = _comp_res_congestion(net_hpwl, placedb)
+        elif metric == 'rudy':
+            res['rudy'] = _comp_res_rudy(net_hpwl, placedb)
         elif metric == 'regularity':
             res['regularity'] = _comp_res_regularity(macros_pos, placedb)
         elif metric == 'overlap':
@@ -66,7 +66,7 @@ def _comp_res_hpwl(net_hpwl, placedb):
     return hpwl
 
 
-def _comp_res_congestion(net_hpwl, placedb):
+def _comp_res_rudy(net_hpwl, placedb):
     congestion = np.zeros((int(placedb.canvas_width), int(placedb.canvas_height)), dtype=np.float32)
     
     coords = np.array(list(net_hpwl.values()))

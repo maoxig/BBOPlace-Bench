@@ -1,3 +1,4 @@
+import logging
 from pymoo.core.sampling import Sampling
 from pymoo.operators.sampling.rnd import IntegerRandomSampling, PermutationRandomSampling
 from abc import abstractmethod
@@ -17,7 +18,11 @@ class BasicSampling():
         self.args = args
         self.placer = placer
         self.eval_metrics = args.eval_metrics
-        self.n_repeat = self.args.n_sampling_repeat
+        if len(args.eval_metrics) > 1:
+            logging.info(f"Sampling with MOEA: {args.algorithm}, n_sampling_repeat: {args.n_sampling_repeat}")
+            self.n_repeat = 1
+        else:
+            self.n_repeat = args.n_sampling_repeat
         self.record_func = args.record_func
     def _do(self, problem, n_samples, **kwargs):
         
@@ -28,6 +33,9 @@ class BasicSampling():
         X, y, macro_pos = self._sampling_do(problem=problem,
                                                 n_samples=n_samples * self.n_repeat,
                                                 kwargs=kwargs)
+        
+        if self.n_repeat == 1: # no need to select
+            return X
         
         Y = np.column_stack(
                 [y[metric] for metric in self.eval_metrics],
@@ -112,7 +120,7 @@ class BasicSampling():
 #  Grid Guide sampling
 ###################################################################
 
-class GrideGuideSingleRandomSampling(BasicSampling, IntegerRandomSampling):
+class GridGuideSingleRandomSampling(BasicSampling, IntegerRandomSampling):
     def __init__(self, args, placer, use_checkpoint=True) -> None:
         BasicSampling.__init__(self, args=args, placer=placer, use_checkpoint=use_checkpoint)
         IntegerRandomSampling.__init__(self)
@@ -128,7 +136,7 @@ class GrideGuideSingleRandomSampling(BasicSampling, IntegerRandomSampling):
         )
 
 
-class GrideGuideRandomSampling(BasicSampling, IntegerRandomSampling):
+class GridGuideRandomSampling(BasicSampling, IntegerRandomSampling):
     def __init__(self, args, placer, use_checkpoint=True) -> None:
         BasicSampling.__init__(self, args=args, placer=placer, use_checkpoint=use_checkpoint)
         IntegerRandomSampling.__init__(self)
@@ -141,7 +149,7 @@ class GrideGuideRandomSampling(BasicSampling, IntegerRandomSampling):
         return x, y, macro_pos
 
     
-class GrideGuideSpiralSampling(BasicSampling, Sampling):
+class GridGuideSpiralSampling(BasicSampling, Sampling):
     def __init__(self, args, placer, use_checkpoint=True) -> None:
         BasicSampling.__init__(self, args=args, placer=placer, use_checkpoint=use_checkpoint)
         Sampling.__init__(self)

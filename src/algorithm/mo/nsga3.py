@@ -96,11 +96,7 @@ class NSGAIII(BasicAlgo):
         else:
             pass
 
-        max_n_gen = (
-            self.args.max_evals // self.args.n_population
-            - self.args.n_sampling_repeat
-            + 1
-        )
+        max_n_gen = self.args.max_evals // self.args.n_population
         remaining_gen = max_n_gen - initial_algo_n_gen
 
         self.t = time.time()
