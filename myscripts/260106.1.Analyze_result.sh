@@ -1,0 +1,1 @@
+python analyze_results.py --result_path /home/xp/project/BBOPlace-Bench/results/superblue1/ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-01-06_14-50-18  --obj_labels hpwl regularity

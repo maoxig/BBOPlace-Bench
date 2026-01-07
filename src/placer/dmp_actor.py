@@ -93,7 +93,7 @@ class DREAMPlaceActor:
         self.placer = NonLinearPlace(self.params, self.placedb, timer=timer)
         
 
-    def evaluate_macro_pos(self, macro_pos, placement_file=None, figure_file=None):
+    def evaluate_macro_pos(self, macro_pos, placement_file=None, figure_file=None, save_result = False):
         """
         评估 HPWL
         macro_pos: {macro_name: (x, y)}
@@ -112,15 +112,22 @@ class DREAMPlaceActor:
         # 2. 运行评估
         metrics = self.placer(self.params, self.placedb)
       
+        if save_result:
+            if placement_file:
+                self.save_placement(placement_file)
+            if figure_file:
+                self.plot(figure_file)
+        
         hpwl = metrics[-1].hpwl.cpu().item()
 
         #print(metrics)
         if isinstance(hpwl, list) or isinstance(hpwl, tuple):
              hpwl = hpwl[0]
-        if placement_file:
-            self.save_placement(placement_file)
-        if figure_file:
-            self.plot(figure_file)
+        if save_result:
+            if placement_file:
+                self.save_placement(placement_file)
+            if figure_file:
+                self.plot(figure_file)
 
         result ={ 
             "macro_pos": macro_pos,
@@ -131,7 +138,7 @@ class DREAMPlaceActor:
             result.update(timing_res)
         return result
 
-    def evaluate_hyper_params(self, params_update: dict, macro_lst: list, placement_file=None, figure_file=None):
+    def evaluate_hyper_params(self, params_update: dict, macro_lst: list, placement_file=None, figure_file=None, save_result = False):
         
         if isinstance(params_update, dict):
             self.params.fromJson(params_update)
@@ -140,10 +147,11 @@ class DREAMPlaceActor:
         
         metrics = self.placer(self.params, self.placedb)
         
-        if placement_file:
-            self.save_placement(placement_file)
-        if figure_file:
-            self.plot(figure_file)
+        if save_result:
+            if placement_file:
+                self.save_placement(placement_file)
+            if figure_file:
+                self.plot(figure_file)
         
         # 处理 macro_lst 可能存在的名称不匹配问题 (bytes vs str)
         if macro_lst and len(macro_lst) > 0:

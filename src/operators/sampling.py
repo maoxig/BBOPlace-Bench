@@ -19,7 +19,7 @@ class BasicSampling():
         self.placer = placer
         self.eval_metrics = args.eval_metrics
         if len(args.eval_metrics) > 1:
-            logging.info(f"Sampling with MOEA: {args.algorithm}, n_sampling_repeat: {args.n_sampling_repeat}")
+            logging.info(f"Sampling with MOEA: {args.algorithm}")
             self.n_repeat = 1
         else:
             self.n_repeat = args.n_sampling_repeat

@@ -38,6 +38,7 @@ class PlacementProblem(Problem):
             
         out["F"] = np.array(y)
         out["macro_pos"] = macro_pos_all
+        out["X"] = x
     
 class MaskGuidedOptimizationPlacementProblem(PlacementProblem):
     def __init__(self, n_grid_x, n_grid_y, placer, n_obj=1):

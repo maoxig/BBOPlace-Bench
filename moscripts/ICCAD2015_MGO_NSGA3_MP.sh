@@ -1,13 +1,13 @@
 problem_formulation=mgo
-algo=nsga2
+algo=nsga3
 benchmark_prefix=superblue
 
-for i in 1 3 4 5 7 10 16 18
+for i in 1  #3 4 5 7 10 16 18
 do
 benchmark=${benchmark_prefix}${i}
 python ../src/main.py \
     --gpu="0,1,2,3"\
-    --name=ICCAD2015_MGO_NSGA2_GP \
+    --name=ICCAD2015_MGO_NSGA3_MP \
     --benchmark=${benchmark} \
     --placer=${problem_formulation} \
     --algorithm=${algo} \
@@ -20,8 +20,9 @@ python ../src/main.py \
     --sampling=random \
     --mutation=shuffle \
     --crossover=uniform \
-    --eval_metrics='["hpwl","rudy","regularity","dataflow_cost","macro_grouping_cost"]' \
+    --eval_metrics='["hpwl","regularity","dataflow_cost"]' \
     --eval_gp_hpwl=False \
-    --error_redirect=False \
-    --n_max_saving_placement=10
+    --n_max_saving_placement=10 \
+    --verbose=False \
+    --n_partitions=6
 done

@@ -98,12 +98,10 @@ class SA(BasicAlgo):
                 avg_t_eval_solution = self.placer.t_eval_solution_total / (self.n_eval + self.args.n_population * 2)
 
                 self._record_results(
-                    hpwl=np.array([now_hpwl]),
-                    overlap_rate=np.array([now_overlap_rate]),
+                    Y=np.array([now_hpwl]),
                     macro_pos_all=np.array([now_macro_pos]),
                     t_each_eval=t_each_eval,
                     avg_t_each_eval=avg_t_each_eval,
-                    avg_t_eval_solution=avg_t_eval_solution,
                 )
 
                 # update temperature                

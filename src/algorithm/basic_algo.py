@@ -1,8 +1,10 @@
 import os
+import time
 import torch
 import numpy as np
 import logging
 import pickle
+import ray
 from abc import abstractmethod
 from utils.debug import *
 from utils.constant import INF
@@ -10,7 +12,7 @@ from utils.random_parser import set_state
 from src.placer.basic_placer import BasicPlacer
 from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 
-
+from pymoo.operators.survival.rank_and_crowding.metrics import calc_crowding_distance
 
 class BasicAlgo:
     def __init__(self, args, placer: BasicPlacer, logger) -> None:
@@ -28,6 +30,9 @@ class BasicAlgo:
 
         self.t_total = 0
         self.max_eval_time_second = args.max_eval_time * 60 * 60 
+        
+        self.elite_pool = [] # storage for elite solutions: [{'X':, 'Y':, 'macro_pos':}]
+        self.K_elite = getattr(args, "n_max_saving_placement", 10)
 
         self.checkpoint_path = os.path.join(args.result_path, "checkpoint")
         os.makedirs(self.checkpoint_path, exist_ok=True)
@@ -36,59 +41,106 @@ class BasicAlgo:
     @abstractmethod
     def run(self):
         pass
+    
+    def _update_elite_pool(self, Y_batch, macro_pos_batch, X_batch=None):
+        # Check inputs
+        if Y_batch is None or len(Y_batch) == 0:
+            return
+        if macro_pos_batch is None:
+            logging.warning("macro_pos_batch is None in _update_elite_pool. Skipping update.")
+            return
+            
+        # 1. Create candidates
+        candidates = []
+        batch_size = len(Y_batch)
+        
+        # Robustness check for macro_pos length
+        if len(macro_pos_batch) != batch_size:
+            logging.warning(f"Length mismatch in _update_elite_pool: Y={len(Y_batch)}, macro_pos={len(macro_pos_batch)}. truncating to min.")
+            batch_size = min(len(Y_batch), len(macro_pos_batch))
 
-    def _record_results(self, Y, macro_pos_all, t_each_eval=0, avg_t_each_eval=0):
+        for i in range(batch_size):
+            cand = {
+                'Y': Y_batch[i],
+                'macro_pos': macro_pos_batch[i],
+                'X': X_batch[i] if X_batch is not None else None
+            }
+            candidates.append(cand)
+            
+        # 2. Merge and Deduplicate
+        full_pool = self.elite_pool + candidates
+        
+        unique_pool = []
+        seen_Y = set()
+        for cand in full_pool:
+            y_tuple = tuple(cand['Y'])
+            if y_tuple not in seen_Y:
+                seen_Y.add(y_tuple)
+                unique_pool.append(cand)
+
+        pool = unique_pool
+        
+        if not pool:
+            self.elite_pool = []
+            return
+
+        # 3. Filter (Non-dominated sorting + Crowding Distance)
+        Y_all = np.array([p['Y'] for p in pool])
+
+        nds = NonDominatedSorting()
+        fronts = nds.do(Y_all)
+
+        
+        new_pool = []
+        for front in fronts:
+            if len(new_pool) + len(front) <= self.K_elite:
+                for idx in front:
+                    new_pool.append(pool[idx])
+            else:
+                # Split front using Crowding Distance
+                n_needed = self.K_elite - len(new_pool)
+                if n_needed > 0:
+                    front_Y = Y_all[front]
+                    cd = calc_crowding_distance(front_Y)
+
+                    # Descending sort
+                    sorted_indices = np.argsort(-cd)
+                    
+                    for i in range(n_needed):
+                        original_idx = front[sorted_indices[i]]
+                        new_pool.append(pool[original_idx])
+                break
+            
+            if len(new_pool) >= self.K_elite:
+                break
+        
+        self.elite_pool = new_pool
+
+    def _record_results(self, Y, macro_pos_all, t_each_eval=0, avg_t_each_eval=0, X=None):
+        # Update elite pool
+        self._update_elite_pool(Y, macro_pos_all, X)
+
         pop_best_Y = np.min(Y, axis=0)
         pop_avg_Y  = np.mean(Y, axis=0)
         pop_std_Y  = np.std(Y, axis=0)
 
-        # pareto sort
-        combined_Y = Y if self.pareto_front is None else np.row_stack([Y, self.pareto_front])
-        pareto_front_indices = np.array(self.nds.do(combined_Y)[0])
-
-        self.pareto_front = combined_Y[pareto_front_indices]
-        selected_indices = pareto_front_indices[pareto_front_indices < Y.shape[0]]
-
-        #macro_pos_selected = [macro_pos_all[idx] for idx in selected_indices]
-        #n_eval_selected = [self.n_eval + idx + 1 for idx in range(len(selected_indices))]
-
-        # Call batch save and plot functions
-        # self.placer.save_placement_batch(macro_pos_selected, n_eval_selected)
-        # self.placer.plot_batch(macro_pos_selected, n_eval_selected)
-
+        if self.elite_pool:
+            elite_Y = np.array([p['Y'] for p in self.elite_pool])
+            self.best_Y = np.min(elite_Y, axis=0)
+            
         for idx, (y, m_pos) in enumerate(zip(Y, macro_pos_all)):
             self.n_eval += 1
-            if self.n_eval > self.args.max_evals:
-                break
-
-            self.best_Y = np.minimum(self.best_Y, y)
             
-            if idx in selected_indices:
-                # Ideal point
-                y_info = "\t".join(
-                    [f"{key}: {value}" for key, value in zip(self.eval_metrics, y)]
-                )
-                logging.info(f"n_eval: {self.n_eval}\t" + y_info)
-                # 这里需要并行化 TODO
-                # if len(m_pos) > 0:
-                #     self.placer.plot(
-                #         macro_pos=m_pos,
-                #         n_eval=self.n_eval,
-                #         hpwl = y[0]
-                #     )
-                #     self.placer.save_placement(
-                #         macro_pos=m_pos,
-                #         n_eval=self.n_eval,
-                #         hpwl = y[0]
-                #     )
-
-
-            for idx, metric in enumerate(self.eval_metrics):
-                self.logger.add(f"{metric}/current", y[idx])
-                self.logger.add(f"{metric}/his_best", self.best_Y[idx])
-                self.logger.add(f"{metric}/pop_best", pop_best_Y[idx])
-                self.logger.add(f"{metric}/pop_avg",  pop_avg_Y[idx])
-                self.logger.add(f"{metric}/pop_std",  pop_std_Y[idx])
+            y_info = "\t".join(
+                [f"{key}: {value}" for key, value in zip(self.eval_metrics, y)]
+            )
+            
+            for i, metric in enumerate(self.eval_metrics):
+                self.logger.add(f"{metric}/current", y[i])
+                self.logger.add(f"{metric}/his_best", self.best_Y[i])
+                self.logger.add(f"{metric}/pop_best", pop_best_Y[i])
+                self.logger.add(f"{metric}/pop_avg",  pop_avg_Y[i])
+                self.logger.add(f"{metric}/pop_std",  pop_std_Y[i])
             
             self.logger.add("Time/each_eval", t_each_eval)
             self.logger.add("Time/avg_each_eval", avg_t_each_eval)
@@ -104,8 +156,52 @@ class BasicAlgo:
                 t_each_eval=t_each_eval,
                 avg_t_each_eval=avg_t_each_eval
             )
-        
+            
+            if self.n_eval >= self.args.max_evals:
+                self._save_elite_solutions()
+                break
 
+
+    def _save_elite_solutions(self):
+        logging.info(f"Saving {len(self.elite_pool)} elite solutions to files...")
+        
+        for i, sol in enumerate(self.elite_pool):
+            sol_id = i + 1
+            macro_pos = sol['macro_pos']
+            
+            # 1. MP Saving: Save simple artifacts (PL, PNG)
+            self.placer.save_placement(macro_pos, sol_id)
+            self.placer.plot(macro_pos, sol_id)
+            
+            # 2. GP Saving: Re-run actor if available to generate GP artifacts
+            if self.placer.gp_evaluators:
+                try:
+                    actor = self.placer.gp_evaluators[0]
+                    
+                    suffix = "def" # GP output is usually DEF
+                    if hasattr(self.args, 'benchmark_type'):
+                        suffix = "def" if "def" in self.args.benchmark_type else "pl"
+
+                    placement_file = os.path.join(self.placer.placement_save_path, f"gp_{sol_id}.{suffix}")
+                    figure_file = os.path.join(self.placer.fig_save_path, f"gp_{sol_id}.png")
+
+                    if self.args.placer == "hpo":
+                        ray.get(actor.evaluate_hyper_params.remote(
+                            sol['X'],
+                            list(macro_pos.keys()),
+                            placement_file=placement_file,
+                            figure_file=figure_file,
+                            save_result=True
+                        ))
+                    else:
+                        ray.get(actor.evaluate_macro_pos.remote(
+                            macro_pos,
+                            placement_file=placement_file,
+                            figure_file=figure_file,
+                            save_result=True
+                        ))
+                except Exception as e:
+                    logging.warning(f"Failed to save GP elite solution {sol_id}: {e}")
 
     def _save_checkpoint(self):
         logging.info("saving checkpoint")
@@ -116,11 +212,13 @@ class BasicAlgo:
         # placement and corresponding figure checkpoint
         self.placer._save_checkpoint(checkpoint_path=self.checkpoint_path)
 
-        # saving pareto front
-        np.save(os.path.join(self.checkpoint_path, "pareto_front.npy"), self.pareto_front)
+        # saving elite pool
+        with open(os.path.join(self.checkpoint_path, "elite_pool.pkl"), 'wb') as f:
+            pickle.dump(self.elite_pool, f)
 
         if self.t_total >= self.max_eval_time_second:
-            logging.info(f"Reaching maximun running time ({self.t_total:.2f} >= {self.max_eval_time_second}), the program will exit")
+            logging.info(f"Reaching maximun running time ({self.t_total:.2f} >= {self.max_eval_time_second}), saving elite solutions and exiting")
+            self._save_elite_solutions()
             exit(0)
 
         
@@ -160,5 +258,9 @@ class BasicAlgo:
             self.placer._load_checkpoint(checkpoint_path=self.args.checkpoint)
 
 
-            # pareto front
-            self.pareto_front = np.load(os.path.join(self.args.checkpoint, "pareto_front.npy"))
+            # elite pool
+            elite_pool_path = os.path.join(self.args.checkpoint, "elite_pool.pkl")
+            if os.path.exists(elite_pool_path):
+                with open(elite_pool_path, 'rb') as f:
+                    self.elite_pool = pickle.load(f)
+

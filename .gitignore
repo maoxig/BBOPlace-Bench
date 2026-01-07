@@ -26,6 +26,7 @@ dockercreate.sh
 benchmarks_bk
 /benchmarks
 /thirdparty
+thirdparty
 !/thirdparty/DREAMPlace_source
 sheets_bk
 sock_path

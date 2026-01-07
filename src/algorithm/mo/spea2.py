@@ -130,12 +130,14 @@ class SPEA2Algo(BasicAlgo):
 
         macro_pos_all = algo.pop.get("macro_pos")
         Y = algo.pop.get("F")
+        X = algo.pop.get("X")
 
         if not self.start_from_checkpoint:
             self._record_results(Y=Y, 
                                 macro_pos_all=macro_pos_all,
                                 t_each_eval=t_each_eval, 
-                                avg_t_each_eval=avg_t_each_eval)
+                                avg_t_each_eval=avg_t_each_eval,
+                                X=X)
         else:
             self.start_from_checkpoint = False
 

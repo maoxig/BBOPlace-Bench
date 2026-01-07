@@ -218,14 +218,6 @@ class BasicPlacer:
             if self.args.eval_gp_hpwl and actor:
                 gp_res = ray.get(actor.evaluate_macro_pos.remote(macro_pos, placement_file, figure_file)) # {macro_pos: {}, eval_metric: value, ...}
                 del gp_res["macro_pos"] # { eval_metric: value, ...}
-            else:
-                # Fallback: save/plot if requested and no actor used for evaluation
-                if placement_file:
-                    n_eval = int(os.path.basename(placement_file).split('.')[0])
-                    self.save_placement(macro_pos, n_eval)
-                if figure_file:
-                    n_eval = int(os.path.basename(figure_file).split('.')[0])
-                    self.plot(macro_pos, n_eval)
             res.update(gp_res)
             
         else:
@@ -368,8 +360,8 @@ class BasicPlacer:
         macro_pos_list = [result[1] for result in results]
 
         # mangage figure
-        self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
-        self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
+        # self._manage_saved_files(self.fig_save_path, self.n_max_saving_placement)
+        # self._manage_saved_files(self.placement_save_path, self.n_max_saving_placement)
         
         return res, macro_pos_list
 
