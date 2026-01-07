@@ -373,8 +373,9 @@ class ProblemInstance():
         port_ids = []
         pin_names = self.dmp_placedb.pin_names.astype(np.str_)
         for port_name in port_names:
-            port_id = np.where(pin_names == port_name)[0].item()
-            port_ids.append(port_id)
+            matches = np.where(pin_names == port_name)[0]
+            if matches.size > 0:
+                port_ids.extend(matches)
 
         # source node (connected to input port)
         source_nodes = set()

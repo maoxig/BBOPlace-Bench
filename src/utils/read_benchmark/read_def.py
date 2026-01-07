@@ -647,10 +647,9 @@ def write_def(file_name, macro_pos, placedb):
         f.write(content)
         
 
-def write_openroad_def(file_name, macro_pos, placedb):
-    content = placedb.to_openroad_def(macro_pos=macro_pos)
-    with open(file_name, "w") as f:
-        f.write(content)
+def write_openroad_def(file_name, macro_pos, placedb, fix_macro=True):
+    placedb.to_openroad_def(macro_pos=macro_pos, fix_macro=fix_macro, filename=file_name)
+
 
 
     

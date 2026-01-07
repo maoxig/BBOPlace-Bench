@@ -174,9 +174,10 @@ class BasicAlgo:
             self.placer.plot(macro_pos, sol_id)
             
             # 2. GP Saving: Re-run actor if available to generate GP artifacts
-            if self.placer.gp_evaluators:
+            if self.args.eval_gp_hpwl:
                 try:
-                    actor = self.placer.gp_evaluators[0]
+                    # Create a temporary actor for saving elite solutions to ensure isolation
+                    actor = self.placer._create_actor()
                     
                     suffix = "def" # GP output is usually DEF
                     if hasattr(self.args, 'benchmark_type'):
@@ -200,6 +201,9 @@ class BasicAlgo:
                             figure_file=figure_file,
                             save_result=True
                         ))
+                    
+                    ray.kill(actor)
+                    
                 except Exception as e:
                     logging.warning(f"Failed to save GP elite solution {sol_id}: {e}")
 

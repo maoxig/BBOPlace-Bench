@@ -6,6 +6,7 @@ from utils.constant import INF
 from pymoo.core.population import Population
 from placer.hpo_placer import params_space
 from pymoo.algorithms.moo.moead import MOEAD
+from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.optimize import minimize
 from ..basic_algo import BasicAlgo
 import time
@@ -70,6 +71,13 @@ class MOEADDE(BasicAlgo):
             self.problem = None
             raise NotImplementedError
         
+        # Generate reference directions for MOEAD
+        self.ref_dirs = get_reference_directions(
+            "das-dennis", 
+            len(self.eval_metrics), 
+            n_partitions=getattr(args, 'n_partitions', 12)
+        )
+
         self.args.__dict__.update(
             {"logger": logger, "record_func": self._record_results}
         )  
@@ -103,6 +111,7 @@ class MOEADDE(BasicAlgo):
             sampling = current_population
 
         self._algo = MOEAD(
+            ref_dirs=self.ref_dirs,
             pop_size=self.args.n_population,
             sampling=sampling,
             crossover=OPS_REGISTRY["crossover"][self.args.placer][self.args.crossover](self.args),
