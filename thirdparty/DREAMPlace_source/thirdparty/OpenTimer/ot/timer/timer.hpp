@@ -66,6 +66,9 @@ class Timer {
     Timer& set_power_unit(watt_t);
     Timer& set_current_unit(ampere_t);
 
+
+    std::unordered_map<std::string, std::string> get_gate_cell_mapping() const;
+
     // Action.
     void update_states();
     void update_timing();

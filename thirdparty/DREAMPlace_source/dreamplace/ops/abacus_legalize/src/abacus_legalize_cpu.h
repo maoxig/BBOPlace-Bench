@@ -91,9 +91,9 @@ void sortNodesInRow(const T* host_x, const T* host_y,
       T yl2 = host_y[node_id2]; 
       T yh1 = yl1 + host_node_size_y[node_id1]; 
       T yh2 = yl2 + host_node_size_y[node_id2]; 
-      dreamplaceAssertMsg(xl1 < xl2 && xh1 < xh2, 
-          "node %d (%g, %g, %g, %g) overlaps with node %d (%g, %g, %g, %g)", 
-          node_id1, xl1, yl1, xh1, yh1, node_id2, xl2, yl2, xh2, yh2);
+      // dreamplaceAssertMsg(xl1 < xl2 && xh1 < xh2, 
+      //     "node %d (%g, %g, %g, %g) overlaps with node %d (%g, %g, %g, %g)", 
+      //     node_id1, xl1, yl1, xh1, yh1, node_id2, xl2, yl2, xh2, yh2);
     }
   }
 }

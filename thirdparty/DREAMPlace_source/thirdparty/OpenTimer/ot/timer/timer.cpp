@@ -1952,6 +1952,16 @@ void Timer::_set_diffscale(Pin& pin, float diffscale) {
   }
 }
 
+std::unordered_map<std::string, std::string> Timer::get_gate_cell_mapping() const {
+  std::unordered_map<std::string, std::string> result;
+  
+  for (const auto& [gate_name, gate] : _gates) {
+      result[gate_name] = gate.cell_name();
+  }
+  
+  return result;
+}
+
 
 };  // end of namespace ot. -----------------------------------------------------------------------
 
