@@ -176,6 +176,10 @@ class BasicAlgo:
             # 2. GP Saving: Re-run actor if available to generate GP artifacts
             if self.args.eval_gp_hpwl:
                 try:
+                    # kill existing actors to free resources
+                    for actor in self.placer.gp_evaluators:
+                        ray.kill(actor)
+                    self.placer.gp_evaluators = []
                     # Create a temporary actor for saving elite solutions to ensure isolation
                     actor = self.placer._create_actor()
                     
@@ -240,7 +244,7 @@ class BasicAlgo:
 
             for i_eval in range(0, self.n_eval):
                 for key, value_lst in log_data.items():
-                    if key in ("random", "np_random"):
+                    if key in ["random", "np_random", "th_random" ,"th_cuda_random"]:
                         continue
                     self.logger.add(key, value_lst[i_eval])
                 self.logger.step()

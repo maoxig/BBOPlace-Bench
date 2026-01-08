@@ -20,9 +20,9 @@ from problem.pymoo_problem import (
 )
 
 
-class SPEA2Algo(BasicAlgo):
+class SPEA2_Algo(BasicAlgo):
     def __init__(self, args, placer, logger):
-        super(SPEA2Algo, self).__init__(args=args, placer=placer, logger=logger)
+        super(SPEA2_Algo, self).__init__(args=args, placer=placer, logger=logger)
         self.node_cnt = placer.placedb.node_cnt
         self.eval_metrics = placer.eval_metrics
         if args.placer == "mgo":

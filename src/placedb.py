@@ -148,5 +148,14 @@ class PlaceDB:
 
         return content
     
-    def to_openroad_def(self, macro_pos=None, fix_macro=True) -> str:
-        pass
+    def to_openroad_def(self, macro_pos=None, fix_macro=True, filename=None) -> str:
+        # 引入项目路径以便加载配置
+        import sys
+        import os 
+        sys.path.append(os.path.abspath("."))
+
+        import thirdparty.dreamplace.ops.place_io.place_io as place_io
+        from thirdparty.dreamplace.Params import Params as DMPParams
+        from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
+
+        
