@@ -74,9 +74,9 @@ class NSGAIII(BasicAlgo):
         
         # Generate reference directions for NSGA-III
         self.ref_dirs = get_reference_directions(
-            "das-dennis", 
+            "uniform", 
             len(self.eval_metrics), 
-            n_partitions=getattr(args, 'n_partitions', 12)
+            n_points = self.args.n_population
         )
         
         self.args.__dict__.update(

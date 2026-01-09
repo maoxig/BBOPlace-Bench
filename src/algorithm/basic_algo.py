@@ -42,6 +42,49 @@ class BasicAlgo:
     def run(self):
         pass
     
+
+    def _record_results(self, Y, macro_pos_all, t_each_eval=0, avg_t_each_eval=0, X=None):
+        # Update historical best Y
+        current_best_Y = np.min(Y, axis=0)
+        self.best_Y = np.minimum(self.best_Y, current_best_Y)
+
+        pop_best_Y = np.min(Y, axis=0)
+        pop_avg_Y  = np.mean(Y, axis=0)
+        pop_std_Y  = np.std(Y, axis=0)
+            
+        for idx, (y, m_pos) in enumerate(zip(Y, macro_pos_all)):
+            self.n_eval += 1
+            
+            y_info = "\t".join(
+                [f"{key}: {value}" for key, value in zip(self.eval_metrics, y)]
+            )
+            
+            for i, metric in enumerate(self.eval_metrics):
+                self.logger.add(f"{metric}/current", y[i])
+                self.logger.add(f"{metric}/his_best", self.best_Y[i])
+                self.logger.add(f"{metric}/pop_best", pop_best_Y[i])
+                self.logger.add(f"{metric}/pop_avg",  pop_avg_Y[i])
+                self.logger.add(f"{metric}/pop_std",  pop_std_Y[i])
+            
+            self.logger.add("Time/each_eval", t_each_eval)
+            self.logger.add("Time/avg_each_eval", avg_t_each_eval)
+            self.logger.step()
+
+            self.placer.save_metrics(
+                current_Y=y,
+                n_eval=self.n_eval,
+                his_best_Y=self.best_Y,
+                pop_best_Y=pop_best_Y,
+                pop_avg_Y=pop_avg_Y,
+                pop_std_Y=pop_std_Y,
+                t_each_eval=t_each_eval,
+                avg_t_each_eval=avg_t_each_eval
+            )
+            
+            if self.n_eval >= self.args.max_evals:
+
+                break
+
     def select_final_solutions(self, population, N=None):
         """
         Select N solutions from the final population using Non-Dominated Sorting and Crowding Distance.
@@ -154,48 +197,6 @@ class BasicAlgo:
                 break
                 
         return selected_solutions
-
-    def _record_results(self, Y, macro_pos_all, t_each_eval=0, avg_t_each_eval=0, X=None):
-        # Update historical best Y
-        current_best_Y = np.min(Y, axis=0)
-        self.best_Y = np.minimum(self.best_Y, current_best_Y)
-
-        pop_best_Y = np.min(Y, axis=0)
-        pop_avg_Y  = np.mean(Y, axis=0)
-        pop_std_Y  = np.std(Y, axis=0)
-            
-        for idx, (y, m_pos) in enumerate(zip(Y, macro_pos_all)):
-            self.n_eval += 1
-            
-            y_info = "\t".join(
-                [f"{key}: {value}" for key, value in zip(self.eval_metrics, y)]
-            )
-            
-            for i, metric in enumerate(self.eval_metrics):
-                self.logger.add(f"{metric}/current", y[i])
-                self.logger.add(f"{metric}/his_best", self.best_Y[i])
-                self.logger.add(f"{metric}/pop_best", pop_best_Y[i])
-                self.logger.add(f"{metric}/pop_avg",  pop_avg_Y[i])
-                self.logger.add(f"{metric}/pop_std",  pop_std_Y[i])
-            
-            self.logger.add("Time/each_eval", t_each_eval)
-            self.logger.add("Time/avg_each_eval", avg_t_each_eval)
-            self.logger.step()
-
-            self.placer.save_metrics(
-                current_Y=y,
-                n_eval=self.n_eval,
-                his_best_Y=self.best_Y,
-                pop_best_Y=pop_best_Y,
-                pop_avg_Y=pop_avg_Y,
-                pop_std_Y=pop_std_Y,
-                t_each_eval=t_each_eval,
-                avg_t_each_eval=avg_t_each_eval
-            )
-            
-            if self.n_eval >= self.args.max_evals:
-
-                break
 
 
     def _save_final_solutions(self, final_solutions):
