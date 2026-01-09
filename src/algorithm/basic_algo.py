@@ -31,7 +31,7 @@ class BasicAlgo:
         self.t_total = 0
         self.max_eval_time_second = args.max_eval_time * 60 * 60 
         
-        self.elite_pool = [] # storage for elite solutions: [{'X':, 'Y':, 'macro_pos':}]
+        # N: number of final solutions to save for evaluation
         self.K_elite = getattr(args, "n_max_saving_placement", 10)
 
         self.checkpoint_path = os.path.join(args.result_path, "checkpoint")
@@ -42,91 +42,127 @@ class BasicAlgo:
     def run(self):
         pass
     
-    def _update_elite_pool(self, Y_batch, macro_pos_batch, X_batch=None):
-        # Check inputs
-        if Y_batch is None or len(Y_batch) == 0:
-            return
-        if macro_pos_batch is None:
-            logging.warning("macro_pos_batch is None in _update_elite_pool. Skipping update.")
-            return
-            
-        # 1. Create candidates
-        candidates = []
-        batch_size = len(Y_batch)
+    def select_final_solutions(self, population, N=None):
+        """
+        Select N solutions from the final population using Non-Dominated Sorting and Crowding Distance.
+        """
+        if N is None:
+            N = self.K_elite
         
-        # Robustness check for macro_pos length
-        if len(macro_pos_batch) != batch_size:
-            logging.warning(f"Length mismatch in _update_elite_pool: Y={len(Y_batch)}, macro_pos={len(macro_pos_batch)}. truncating to min.")
-            batch_size = min(len(Y_batch), len(macro_pos_batch))
+        # Handle pymoo Result object
+        if hasattr(population, "pop"):
+            population = population.pop
 
-        for i in range(batch_size):
-            cand = {
-                'Y': Y_batch[i],
-                'macro_pos': macro_pos_batch[i],
-                'X': X_batch[i] if X_batch is not None else None
-            }
-            candidates.append(cand)
-            
-        # 2. Merge and Deduplicate
-        full_pool = self.elite_pool + candidates
+        # Normalize population input to a list of dicts with 'X', 'Y', 'macro_pos'
+        candidates = []
         
+        # Handle pymoo Population object (or anything with .get method returning arrays)
+        # Note: dicts also have .get, so we check this first but carefully
+        if hasattr(population, "get") and not isinstance(population, dict):
+             xs = population.get("X")
+             ys = population.get("F")
+             if ys is None: ys = population.get("Y")
+             mps = population.get("macro_pos")
+             
+             if ys is not None:
+                 n = len(ys)
+                 for i in range(n):
+                     candidates.append({
+                         'X': xs[i] if xs is not None else None,
+                         'Y': ys[i],
+                         'macro_pos': mps[i] if mps is not None else None
+                     })
+
+        elif isinstance(population, list):
+             # Assume list of objects/dicts that have attributes or keys
+             for ind in population:
+                 # Check if it's a dict
+                 if isinstance(ind, dict):
+                     candidates.append(ind)
+                 else:
+                     # Assume Individual-like object with attributes
+                     candidates.append({
+                         'X': getattr(ind, 'X', None),
+                         'Y': getattr(ind, 'F', getattr(ind, 'Y', None)), # pymoo uses F
+                         'macro_pos': getattr(ind, 'macro_pos', None)
+                     })
+        elif isinstance(population, dict):
+             # Assume dict of arrays/lists: {'X': [...], 'Y': [...], 'macro_pos': [...]}
+             # Check lengths
+             ys = population.get('Y')
+             if ys is None:
+                 ys = population.get('F')
+             xs = population.get('X')
+             mps = population.get('macro_pos')
+             if ys is not None:
+                 n = len(ys)
+                 for i in range(n):
+                     candidates.append({
+                         'X': xs[i] if xs is not None else None,
+                         'Y': ys[i],
+                         'macro_pos': mps[i] if mps is not None else None
+                     })
+        else:
+            # Fallback for empty or unknown types passed that weren't caught
+            if not candidates:
+                logging.warning(f"Unknown population format in select_final_solutions: {type(population)}. Return empty.")
+                return []
+
+        # Filter out invalid entries
+        pool = [c for c in candidates if c['Y'] is not None and c['macro_pos'] is not None]
+        
+        if not pool:
+            return []
+
+        # Deduplicate based on Y
         unique_pool = []
         seen_Y = set()
-        for cand in full_pool:
+        for cand in pool:
             y_tuple = tuple(cand['Y'])
             if y_tuple not in seen_Y:
                 seen_Y.add(y_tuple)
                 unique_pool.append(cand)
-
         pool = unique_pool
         
         if not pool:
-            self.elite_pool = []
-            return
+            return []
 
-        # 3. Filter (Non-dominated sorting + Crowding Distance)
+        # Perform Selection
         Y_all = np.array([p['Y'] for p in pool])
-
         nds = NonDominatedSorting()
         fronts = nds.do(Y_all)
-
         
-        new_pool = []
+        selected_solutions = []
         for front in fronts:
-            if len(new_pool) + len(front) <= self.K_elite:
+            if len(selected_solutions) + len(front) <= N:
                 for idx in front:
-                    new_pool.append(pool[idx])
+                    selected_solutions.append(pool[idx])
             else:
                 # Split front using Crowding Distance
-                n_needed = self.K_elite - len(new_pool)
+                n_needed = N - len(selected_solutions)
                 if n_needed > 0:
                     front_Y = Y_all[front]
                     cd = calc_crowding_distance(front_Y)
-
                     # Descending sort
                     sorted_indices = np.argsort(-cd)
-                    
                     for i in range(n_needed):
                         original_idx = front[sorted_indices[i]]
-                        new_pool.append(pool[original_idx])
+                        selected_solutions.append(pool[original_idx])
                 break
             
-            if len(new_pool) >= self.K_elite:
+            if len(selected_solutions) >= N:
                 break
-        
-        self.elite_pool = new_pool
+                
+        return selected_solutions
 
     def _record_results(self, Y, macro_pos_all, t_each_eval=0, avg_t_each_eval=0, X=None):
-        # Update elite pool
-        self._update_elite_pool(Y, macro_pos_all, X)
+        # Update historical best Y
+        current_best_Y = np.min(Y, axis=0)
+        self.best_Y = np.minimum(self.best_Y, current_best_Y)
 
         pop_best_Y = np.min(Y, axis=0)
         pop_avg_Y  = np.mean(Y, axis=0)
         pop_std_Y  = np.std(Y, axis=0)
-
-        if self.elite_pool:
-            elite_Y = np.array([p['Y'] for p in self.elite_pool])
-            self.best_Y = np.min(elite_Y, axis=0)
             
         for idx, (y, m_pos) in enumerate(zip(Y, macro_pos_all)):
             self.n_eval += 1
@@ -158,14 +194,27 @@ class BasicAlgo:
             )
             
             if self.n_eval >= self.args.max_evals:
-                self._save_elite_solutions()
+
                 break
 
 
-    def _save_elite_solutions(self):
-        logging.info(f"Saving {len(self.elite_pool)} elite solutions to files...")
+    def _save_final_solutions(self, final_solutions):
+        if not final_solutions:
+            logging.warning("No final solutions to save.")
+            return
+
+        logging.info(f"Saving {len(final_solutions)} final solutions to files...")
         
-        for i, sol in enumerate(self.elite_pool):
+        # Save final solutions data to pickle for analysis
+        final_solutions_path = os.path.join(self.checkpoint_path, "final_solutions.pkl")
+        try:
+            with open(final_solutions_path, 'wb') as f:
+                pickle.dump(final_solutions, f)
+            logging.info(f"Saved final solutions data to {final_solutions_path}")
+        except Exception as e:
+            logging.error(f"Failed to save final_solutions.pkl: {e}")
+
+        for i, sol in enumerate(final_solutions):
             sol_id = i + 1
             macro_pos = sol['macro_pos']
             
@@ -220,13 +269,8 @@ class BasicAlgo:
         # placement and corresponding figure checkpoint
         self.placer._save_checkpoint(checkpoint_path=self.checkpoint_path)
 
-        # saving elite pool
-        with open(os.path.join(self.checkpoint_path, "elite_pool.pkl"), 'wb') as f:
-            pickle.dump(self.elite_pool, f)
-
         if self.t_total >= self.max_eval_time_second:
-            logging.info(f"Reaching maximun running time ({self.t_total:.2f} >= {self.max_eval_time_second}), saving elite solutions and exiting")
-            self._save_elite_solutions()
+            logging.info(f"Reaching maximun running time ({self.t_total:.2f} >= {self.max_eval_time_second}), exiting")
             exit(0)
 
         
@@ -264,11 +308,4 @@ class BasicAlgo:
             self.t_total   = sum(log_data["Time/each_eval"])
 
             self.placer._load_checkpoint(checkpoint_path=self.args.checkpoint)
-
-
-            # elite pool
-            elite_pool_path = os.path.join(self.args.checkpoint, "elite_pool.pkl")
-            if os.path.exists(elite_pool_path):
-                with open(elite_pool_path, 'rb') as f:
-                    self.elite_pool = pickle.load(f)
 

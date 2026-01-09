@@ -149,7 +149,9 @@ def single_run(args):
         placedb = PlaceDB(args=args)
     placer = PLACER_REGISTRY[args.placer](args=args, placedb=placedb, eval_metrics= args.eval_metrics) 
     runner = ALGO_REGISTRY[args.algorithm](args=args, placer=placer, logger=logger)
-    runner.run()
+    res = runner.run()
+    final_solutions = runner.select_final_solutions(res)
+    runner._save_final_solutions(final_solutions)
     logging.info("Exit single run")
 
 
