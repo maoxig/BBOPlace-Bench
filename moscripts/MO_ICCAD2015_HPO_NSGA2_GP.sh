@@ -1,10 +1,10 @@
 problem_formulation=hpo
 algo=nsga2
 
-for benchmark in superblue1 superblue3 superblue4 superblue5 superblue7 superblue10 superblue16 superblue18
+for benchmark in superblue1 #superblue3 superblue4 superblue5 superblue7 superblue10 superblue16 superblue18
 do
 python ../src/main.py \
-    --gpu="0,1,2,3"\
+    --gpu="0,1,2"\
     --name=MO_ICCAD2015_HPO_NSGA2_GP \
     --benchmark=${benchmark} \
     --placer=${problem_formulation} \
@@ -18,7 +18,7 @@ python ../src/main.py \
     --sampling=random \
     --mutation=random_resetting \
     --crossover=uniform \
-    --eval_metrics='["gp_hpwl","dataflow_cost"]' \
+    --eval_metrics='["gp_hpwl","route_utilization"]' \
     --eval_gp_hpwl=True \
     --n_max_saving_placement=10 \
     --verbose=False

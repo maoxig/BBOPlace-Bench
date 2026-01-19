@@ -23,9 +23,8 @@ from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
 import thirdparty.dreamplace.Timer as Timer
 import thirdparty.dreamplace.EvalMetrics as EvalMetrics
 import thirdparty.dreamplace.PlaceObj as PlaceObj
-
-
 import thirdparty.dreamplace.ops.rudy.rudy as rudy
+import thirdparty.dreamplace.ops.pin_utilization.pin_utilization as pin_utilization
 
 @ray.remote(max_restarts=-1)
 class DREAMPlaceActor:
@@ -234,6 +233,10 @@ class DREAMPlaceActor:
         if self.args_dict.get("eval_metrics", []) and "route_utilization" in self.args_dict.get("eval_metrics", []):
             routability_needed = True
         
+        pin_utilization_needed = False
+        if self.args_dict.get("eval_metrics", []) and "pin_utilization" in self.args_dict.get("eval_metrics", []):
+            pin_utilization_needed = True
+        
         if routability_needed and self.placer.op_collections.route_utilization_map_op is None:
              # Manually build RUDY op if needed, instead of re-instantiating PlaceObj
              try:
@@ -251,14 +254,41 @@ class DREAMPlaceActor:
                     yh=placedb.yh,
                     num_bins_x=placedb.num_routing_grids_x,
                     num_bins_y=placedb.num_routing_grids_y,
-                    unit_horizontal_capacity=placedb.unit_horizontal_capacity,
-                    unit_vertical_capacity=placedb.unit_vertical_capacity,
+                    unit_horizontal_capacity=float(placedb.unit_horizontal_capacity),
+                    unit_vertical_capacity=float(placedb.unit_vertical_capacity),
                     deterministic_flag=params.deterministic_flag if hasattr(params, 'deterministic_flag') else True,
                     initial_horizontal_utilization_map=None,
                     initial_vertical_utilization_map=None
                  ).to(data_collections.pos[0].device)
              except Exception as e:
                  print(f"Warning: Failed to build RUDY op manually: {e}")
+
+        if pin_utilization_needed and self.placer.op_collections.pin_utilization_map_op is None:
+             # Manually build Pin Utilization op
+             try:
+                params = self.params
+                placedb = self.placedb
+                data_collections = self.placer.data_collections
+
+                self.placer.op_collections.pin_utilization_map_op = pin_utilization.PinUtilization(
+                    node_size_x=data_collections.node_size_x,
+                    node_size_y=data_collections.node_size_y,
+                    pin_weights=data_collections.pin_weights,
+                    flat_node2pin_start_map=data_collections.flat_node2pin_start_map,
+                    xl=placedb.xl,
+                    yl=placedb.yl,
+                    xh=placedb.xh,
+                    yh=placedb.yh,
+                    num_movable_nodes=placedb.num_movable_nodes,
+                    num_filler_nodes=placedb.num_filler_nodes,
+                    num_bins_x=placedb.num_routing_grids_x,
+                    num_bins_y=placedb.num_routing_grids_y,
+                    unit_pin_capacity=data_collections.unit_pin_capacity,
+                    pin_stretch_ratio=params.pin_stretch_ratio if hasattr(params, 'pin_stretch_ratio') else 1.414213562,
+                    deterministic_flag=params.deterministic_flag if hasattr(params, 'deterministic_flag') else True,
+                ).to(data_collections.pos[0].device)
+             except Exception as e:
+                 print(f"Warning: Failed to build Pin Utilization op manually: {e}")
 
         ops = {
             # "hpwl": self.placer.op_collections.hpwl_op, # Already extracted from metrics
@@ -268,6 +298,9 @@ class DREAMPlaceActor:
         
         if self.placer.op_collections.route_utilization_map_op:
             ops["route_utilization"] = self.placer.op_collections.route_utilization_map_op
+        
+        if self.placer.op_collections.pin_utilization_map_op:
+            ops["pin_utilization"] = self.placer.op_collections.pin_utilization_map_op
 
         metric = EvalMetrics.EvalMetrics()
         # Evaluate metrics on current position (self.placer.pos[0])
@@ -280,6 +313,9 @@ class DREAMPlaceActor:
         
         if metric.route_utilization is not None:
              results["route_utilization"] = float(metric.route_utilization)
+        
+        if metric.pin_utilization is not None:
+             results["pin_utilization"] = float(metric.pin_utilization)
         
         return results
 
