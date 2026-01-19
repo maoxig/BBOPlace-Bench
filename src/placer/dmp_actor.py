@@ -21,7 +21,11 @@ from thirdparty.dreamplace.Params import Params as DMPParams
 from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
 from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
 import thirdparty.dreamplace.Timer as Timer
+import thirdparty.dreamplace.EvalMetrics as EvalMetrics
+import thirdparty.dreamplace.PlaceObj as PlaceObj
 
+
+import thirdparty.dreamplace.ops.rudy.rudy as rudy
 
 @ray.remote(max_restarts=-1)
 class DREAMPlaceActor:
@@ -133,6 +137,11 @@ class DREAMPlaceActor:
             "macro_pos": macro_pos,
             "gp_hpwl": float(hpwl)
         }
+        
+        # Evaluate additional metrics (density, overflow, route_utilization)
+        extra_metrics = self._evaluate_metrics_from_placer()
+        result.update(extra_metrics)
+
         if self.eval_timing:
             timing_res = self.evaluate_timing()
             result.update(timing_res)
@@ -174,6 +183,11 @@ class DREAMPlaceActor:
             "macro_pos": macro_pos,
             "gp_hpwl": float(metrics[-1].hpwl.cpu().item())
         }
+
+        # Evaluate additional metrics
+        extra_metrics = self._evaluate_metrics_from_placer()
+        result.update(extra_metrics)
+
         if self.eval_timing:
             timing_res = self.evaluate_timing()
             result.update(timing_res)
@@ -201,6 +215,73 @@ class DREAMPlaceActor:
             "n_wns":  -float(wns)
         }
         return result
+
+    def _evaluate_metrics_from_placer(self):
+        """
+        Evaluate additional metrics (density, overflow, route_utilization) from the current placer state.
+        This is called after placement has run, so the position and data collections are populated.
+        """
+        if self.placer is None:
+            return {}
+        
+        # Ensure ops exist, particularly for routability if not enabled globally but requested
+        if self.placer.op_collections.density_op is None:
+             # This might happen if density weight was 0 and optimization skipped density? Unlikely in DMP logic.
+             # But if routability op is missing and we want it, we need to build it.
+             pass
+
+        routability_needed = False
+        if self.args_dict.get("eval_metrics", []) and "route_utilization" in self.args_dict.get("eval_metrics", []):
+            routability_needed = True
+        
+        if routability_needed and self.placer.op_collections.route_utilization_map_op is None:
+             # Manually build RUDY op if needed, instead of re-instantiating PlaceObj
+             try:
+                 params = self.params
+                 placedb = self.placedb
+                 data_collections = self.placer.data_collections
+                 
+                 self.placer.op_collections.route_utilization_map_op = rudy.Rudy(
+                    netpin_start=data_collections.flat_net2pin_start_map,
+                    flat_netpin=data_collections.flat_net2pin_map,
+                    net_weights=data_collections.net_weights,
+                    xl=placedb.xl,
+                    xh=placedb.xh,
+                    yl=placedb.yl,
+                    yh=placedb.yh,
+                    num_bins_x=placedb.num_routing_grids_x,
+                    num_bins_y=placedb.num_routing_grids_y,
+                    unit_horizontal_capacity=placedb.unit_horizontal_capacity,
+                    unit_vertical_capacity=placedb.unit_vertical_capacity,
+                    deterministic_flag=params.deterministic_flag if hasattr(params, 'deterministic_flag') else True,
+                    initial_horizontal_utilization_map=None,
+                    initial_vertical_utilization_map=None
+                 ).to(data_collections.pos[0].device)
+             except Exception as e:
+                 print(f"Warning: Failed to build RUDY op manually: {e}")
+
+        ops = {
+            # "hpwl": self.placer.op_collections.hpwl_op, # Already extracted from metrics
+            "density": self.placer.op_collections.density_op,
+            "overflow": self.placer.op_collections.density_overflow_op,
+        }
+        
+        if self.placer.op_collections.route_utilization_map_op:
+            ops["route_utilization"] = self.placer.op_collections.route_utilization_map_op
+
+        metric = EvalMetrics.EvalMetrics()
+        # Evaluate metrics on current position (self.placer.pos[0])
+        metric.evaluate(self.placedb, ops, self.placer.pos[0], self.placer.data_collections)
+        
+        results = {
+            "density": float(metric.density) if metric.density is not None and metric.density.numel() == 1 else None,
+            "overflow": float(metric.overflow) if metric.overflow is not None else None,
+        }
+        
+        if metric.route_utilization is not None:
+             results["route_utilization"] = float(metric.route_utilization)
+        
+        return results
 
     def plot(self, figure_name):
         """

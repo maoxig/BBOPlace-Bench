@@ -21,6 +21,5 @@ python ../src/main.py \
     --eval_metrics='["hpwl","regularity","macro_grouping_cost"]' \
     --eval_gp_hpwl=False \
     --n_max_saving_placement=10 \
-    --verbose=False \
-    --n_partitions=6
+    --verbose=False
 done

@@ -1,7 +1,7 @@
 problem_formulation=mgo
 algo=nsga2
 
-for benchmark in superblue1 superblue3 superblue4 superblue5 superblue7 superblue10 superblue16 superblue18
+for benchmark in superblue1 # superblue3 superblue4 superblue5 superblue7 superblue10 superblue16 superblue18
 do
 python ../src/main.py \
     --gpu="0,1,2,3"\
@@ -18,9 +18,8 @@ python ../src/main.py \
     --sampling=random \
     --mutation=shuffle \
     --crossover=uniform \
-    --eval_metrics='["gp_hpwl","dataflow_cost"]' \
+    --eval_metrics='["gp_hpwl","density", "overflow", "route_utilization"]' \
     --eval_gp_hpwl=True \
     --n_max_saving_placement=10 \
-    --verbose=False \
-    --n_partitions=12
+    --verbose=True
 done

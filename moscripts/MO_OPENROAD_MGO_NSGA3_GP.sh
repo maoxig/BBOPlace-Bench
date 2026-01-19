@@ -22,6 +22,5 @@ python ../src/main.py \
     --eval_metrics='["gp_hpwl","dataflow_cost"]' \
     --eval_gp_hpwl=True \
     --n_max_saving_placement=10 \
-    --verbose=False \
-    --n_partitions=12
+    --verbose=False
 done
