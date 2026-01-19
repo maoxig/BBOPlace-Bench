@@ -11,8 +11,8 @@ python ../src/main.py \
     --algorithm=${algo} \
     --run_mode=single \
     --n_cpu_max=10 \
-    --n_population=50 \
-    --max_evals=1000 \
+    --n_population=20 \
+    --max_evals=500 \
     --max_eval_time=72 \
     --n_macro=512 \
     --sampling=random \

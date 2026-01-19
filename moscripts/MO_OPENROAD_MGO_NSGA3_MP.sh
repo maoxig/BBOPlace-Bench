@@ -12,8 +12,8 @@ python ../src/main.py \
     --algorithm=${algo} \
     --run_mode=single \
     --n_cpu_max=10 \
-    --n_population=50 \
-    --max_evals=10000 \
+    --n_population=20 \
+    --max_evals=5000 \
     --max_eval_time=72 \
     --n_macro=512 \
     --sampling=random \
@@ -21,7 +21,7 @@ python ../src/main.py \
     --crossover=uniform \
     --eval_metrics='["hpwl","regularity","dataflow_cost"]' \
     --eval_gp_hpwl=False \
-    --n_max_saving_placement=100 \
+    --n_max_saving_placement=10 \
     --verbose=False \
     --n_partitions=6
 done
