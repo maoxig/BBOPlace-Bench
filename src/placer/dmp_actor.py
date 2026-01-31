@@ -237,6 +237,21 @@ class DREAMPlaceActor:
         if self.args_dict.get("eval_metrics", []) and "pin_utilization" in self.args_dict.get("eval_metrics", []):
             pin_utilization_needed = True
         
+        if routability_needed and self.placer.op_collections.pin_pos_op is None:
+             try:
+                 import thirdparty.dreamplace.ops.pin_pos.pin_pos as pin_pos
+                 self.placer.op_collections.pin_pos_op = pin_pos.PinPos(
+                     pin_offset_x=self.placer.data_collections.pin_offset_x,
+                     pin_offset_y=self.placer.data_collections.pin_offset_y,
+                     pin2node_map=self.placer.data_collections.pin2node_map,
+                     flat_node2pin_map=self.placer.data_collections.flat_node2pin_map,
+                     flat_node2pin_start_map=self.placer.data_collections.flat_node2pin_start_map,
+                     num_physical_nodes=self.placedb.num_movable_nodes,
+                     algorithm="segment"
+                 ).to(self.placer.data_collections.pos[0].device)
+             except Exception as e:
+                 print(f"Warning: Failed to build PinPos op manually: {e}")
+
         if routability_needed and self.placer.op_collections.route_utilization_map_op is None:
              # Manually build RUDY op if needed, instead of re-instantiating PlaceObj
              try:
@@ -297,7 +312,14 @@ class DREAMPlaceActor:
         }
         
         if self.placer.op_collections.route_utilization_map_op:
-            ops["route_utilization"] = self.placer.op_collections.route_utilization_map_op
+            if self.placer.op_collections.pin_pos_op:
+                def route_utilization_wrapper(pos):
+                    # Compute pin pos from node pos
+                    pin_pos = self.placer.op_collections.pin_pos_op(pos)
+                    return self.placer.op_collections.route_utilization_map_op(pin_pos)
+                ops["route_utilization"] = route_utilization_wrapper
+            else:
+                ops["route_utilization"] = self.placer.op_collections.route_utilization_map_op
         
         if self.placer.op_collections.pin_utilization_map_op:
             ops["pin_utilization"] = self.placer.op_collections.pin_utilization_map_op
