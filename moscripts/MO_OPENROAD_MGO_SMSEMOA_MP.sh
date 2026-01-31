@@ -18,7 +18,7 @@ python ../src/main.py \
     --sampling=random \
     --mutation=shuffle \
     --crossover=uniform \
-    --eval_metrics='["hpwl","regularity","rudy"]' \
+    --eval_metrics='["hpwl","regularity","rudy2"]' \
     --eval_gp_hpwl=False \
     --n_max_saving_placement=5 \
     --verbose=False
