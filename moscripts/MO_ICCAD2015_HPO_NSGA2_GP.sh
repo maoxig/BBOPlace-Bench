@@ -18,8 +18,8 @@ python ../src/main.py \
     --sampling=random \
     --mutation=random_resetting \
     --crossover=uniform \
-    --eval_metrics='["gp_hpwl","route_utilization"]' \
+    --eval_metrics='["gp_hpwl","overflow","route_utilization"]' \
     --eval_gp_hpwl=True \
-    --n_max_saving_placement=10 \
+    --n_max_saving_placement=5 \
     --verbose=False
 done

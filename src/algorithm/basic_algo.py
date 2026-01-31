@@ -87,11 +87,9 @@ class BasicAlgo:
 
     def select_final_solutions(self, population, N=None):
         """
-        Select N solutions from the final population using Non-Dominated Sorting and Crowding Distance.
+        Convert population to a list of solutions, sorted by Non-Dominated Sorting and Crowding Distance.
+        Returns ALL valid distinct solutions found in the population (ignoring N limit for filtering, keeping sorting).
         """
-        if N is None:
-            N = self.K_elite
-        
         # Handle pymoo Result object
         if hasattr(population, "pop"):
             population = population.pop
@@ -100,7 +98,6 @@ class BasicAlgo:
         candidates = []
         
         # Handle pymoo Population object (or anything with .get method returning arrays)
-        # Note: dicts also have .get, so we check this first but carefully
         if hasattr(population, "get") and not isinstance(population, dict):
              xs = population.get("X")
              ys = population.get("F")
@@ -146,7 +143,6 @@ class BasicAlgo:
                          'macro_pos': mps[i] if mps is not None else None
                      })
         else:
-            # Fallback for empty or unknown types passed that weren't caught
             if not candidates:
                 logging.warning(f"Unknown population format in select_final_solutions: {type(population)}. Return empty.")
                 return []
@@ -157,7 +153,7 @@ class BasicAlgo:
         if not pool:
             return []
 
-        # Deduplicate based on Y
+        # Deduplicate based on Y (Optional: might want to keep diversity in X, but standard is obj space dedup for evaluation)
         unique_pool = []
         seen_Y = set()
         for cand in pool:
@@ -170,33 +166,25 @@ class BasicAlgo:
         if not pool:
             return []
 
-        # Perform Selection
+        # Perform Selection (Sort by Rank then Crowding Distance)
         Y_all = np.array([p['Y'] for p in pool])
         nds = NonDominatedSorting()
         fronts = nds.do(Y_all)
         
-        selected_solutions = []
+        sorted_solutions = []
         for front in fronts:
-            if len(selected_solutions) + len(front) <= N:
-                for idx in front:
-                    selected_solutions.append(pool[idx])
-            else:
-                # Split front using Crowding Distance
-                n_needed = N - len(selected_solutions)
-                if n_needed > 0:
-                    front_Y = Y_all[front]
-                    cd = calc_crowding_distance(front_Y)
-                    # Descending sort
-                    sorted_indices = np.argsort(-cd)
-                    for i in range(n_needed):
-                        original_idx = front[sorted_indices[i]]
-                        selected_solutions.append(pool[original_idx])
-                break
-            
-            if len(selected_solutions) >= N:
-                break
-                
-        return selected_solutions
+            # For each front, sort by crowding distance descending
+            if len(front) > 0:
+                front_Y = Y_all[front]
+                cd = calc_crowding_distance(front_Y)
+                # Descending sort
+                sorted_indices = np.argsort(-cd)
+                for i in sorted_indices:
+                    original_idx = front[i]
+                    sorted_solutions.append(pool[original_idx])
+        
+        # Return all sorted solutions
+        return sorted_solutions
 
 
     def _save_final_solutions(self, final_solutions):
@@ -215,7 +203,15 @@ class BasicAlgo:
         except Exception as e:
             logging.error(f"Failed to save final_solutions.pkl: {e}")
 
+        # Limit artifacts saving to top K solutions (e.g., 5)
+        # This allows saving all population data in pkl/csv but only generating expensive artifacts for the best ones
+        K_ARTIFACTS = 5 
+        logging.info(f"Generating artifacts (def/png) for top {min(len(final_solutions), K_ARTIFACTS)} solutions.")
+
         for i, sol in enumerate(final_solutions):
+            if i >= K_ARTIFACTS:
+                break
+
             sol_id = i + 1
             macro_pos = sol['macro_pos']
             

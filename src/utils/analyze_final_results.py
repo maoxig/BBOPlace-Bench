@@ -126,18 +126,30 @@ def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None,
              if all_points.shape[1] >= 2:
                   ax.scatter(all_points[:, 0], all_points[:, 1], c='lightgray', s=15, alpha=0.3, label='Visited Solutions', zorder=1)
 
-        # Plot Selected Solutions
-        ax.scatter(pareto_front[:, 0], pareto_front[:, 1], c='red', s=60, edgecolors='black', label='Selected Solutions', zorder=2)
-        
+        # Plot All Candidates (Pareto Front inputs)
+        ax.scatter(pareto_front[:, 0], pareto_front[:, 1], c='blue', s=40, edgecolors='black', label='Final Candidates', zorder=2, alpha=0.6)
+
+        # Top 5 Selection (Assuming input pareto_front is sorted by NDS+CD, first 5 are the selected ones)
+        # In BasicAlgo, we save sorted list. So we can just highlight the first min(5, len) points.
+        K_SELECTED = 5
+        n_selected = min(len(pareto_front), K_SELECTED)
+        if n_selected > 0:
+            selected_subset = pareto_front[:n_selected]
+            ax.scatter(selected_subset[:, 0], selected_subset[:, 1], c='red', s=80, marker='*', edgecolors='black', label=f'Selected for PPA (Top {n_selected})', zorder=3)
+            # Annotate
+            for i in range(n_selected):
+                ax.text(selected_subset[i, 0], selected_subset[i, 1], str(i+1), fontsize=9, color='black', ha='right', va='bottom')
+
         # Connect the dots for 2D Pareto Front (Trade-off line)
         nds = NonDominatedSorting()
         fronts = nds.do(pareto_front)
         nd_indices = fronts[0]
         nd_front = pareto_front[nd_indices]
         
-        sorted_indices = np.argsort(nd_front[:, 0])
-        sorted_front = nd_front[sorted_indices]
-        ax.plot(sorted_front[:, 0], sorted_front[:, 1], c='red', alpha=0.6, linestyle='--', linewidth=1.5, zorder=2)
+        if len(nd_front) > 0:
+            sorted_indices = np.argsort(nd_front[:, 0])
+            sorted_front = nd_front[sorted_indices]
+            ax.plot(sorted_front[:, 0], sorted_front[:, 1], c='green', alpha=0.5, linestyle='--', linewidth=1.5, zorder=2, label='Pareto Front')
 
         ax.set_xlabel(obj_labels[0])
         ax.set_ylabel(obj_labels[1])
@@ -151,9 +163,16 @@ def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None,
         
         if all_points is not None and len(all_points) > 0:
              if all_points.shape[1] >= 3:
-                 ax.scatter(all_points[:, 0], all_points[:, 1], all_points[:, 2], c='lightgray', s=10, alpha=0.2, label='Visited Solutions')
+                 ax.scatter(all_points[:, 0], all_points[:, 1], all_points[:, 2], c='lightgray', s=10, alpha=0.2, label='Visited Solution')
 
-        ax.scatter(pareto_front[:, 0], pareto_front[:, 1], pareto_front[:, 2], c='red', s=60, edgecolors='black', label='Selected Solutions')
+        ax.scatter(pareto_front[:, 0], pareto_front[:, 1], pareto_front[:, 2], c='blue', s=40, edgecolors='black', label='Final Candidates')
+        
+        K_SELECTED = 5
+        n_selected = min(len(pareto_front), K_SELECTED)
+        if n_selected > 0:
+             selected_subset = pareto_front[:n_selected]
+             ax.scatter(selected_subset[:, 0], selected_subset[:, 1], selected_subset[:, 2], c='red', s=80, marker='*', edgecolors='black', label=f'Selected for PPA')
+
         ax.set_xlabel(obj_labels[0])
         ax.set_ylabel(obj_labels[1])
         ax.set_zlabel(obj_labels[2])
