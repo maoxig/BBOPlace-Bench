@@ -95,6 +95,8 @@ class HPOPlacer(BasicPlacer):
         self.actors = [self._create_actor() for _ in range(n_workers)]
         # 将 actors 赋值给 gp_evaluators 以复用 BasicPlacer 的逻辑
         self.gp_evaluators = self.actors
+        if self.args.benchmark_type == "openroad_def":
+             self.poster = self.actors[0]
         
 
     def _create_actor(self):

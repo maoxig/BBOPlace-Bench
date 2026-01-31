@@ -70,23 +70,29 @@ class BasicPlacer:
         self.counter = 0
         
         self.gp_evaluators = []
+        self.poster = None
+        
+        # Initialize resources info
+        num_cpus = getattr(self.args, 'num_cpus', 1)
+        num_gpus = getattr(self.args, 'num_gpus', 0)
+        n_workers = max(1, num_cpus // 2 - 1)
+        self.gpu_resources = 0
+        if num_gpus > 0:
+            actors_per_gpu = math.ceil(n_workers / num_gpus)
+            self.gpu_resources = 0.99 / actors_per_gpu
+
         if self.args.eval_gp_hpwl and self.args.placer != 'hpo':
-            num_cpus = getattr(self.args, 'num_cpus', 1)
-            num_gpus = getattr(self.args, 'num_gpus', 0)
-            # If we have N CPUs, we can use roughly N/2 workers to allow N/2 concurrent tasks
-            n_workers = max(1, num_cpus // 2 - 1)
-            # Calculate GPU resources per actor
-            self.gpu_resources = 0
-            if num_gpus > 0:
-                # Distribute workers across GPUs
-                actors_per_gpu = math.ceil(n_workers / num_gpus)
-                # Set resource requirement slightly less than 1/N to avoid floating point issues preventing packing
-                self.gpu_resources = 0.99 / actors_per_gpu
-            
             print(f"Initializing {n_workers} DREAMPlace Actors for BasicPlacer with {self.gpu_resources:.4f} GPU each...")
             # Use max_restarts=-1 (infinite restarts) and max_task_retries=-1
             # But crucially, use max_calls to restart actor after N calls to clear memory leaks
             self.gp_evaluators = [self._create_actor() for _ in range(n_workers)]
+            
+        if self.args.benchmark_type == "openroad_def" and self.args.placer != 'hpo':
+            if len(self.gp_evaluators) > 0:
+                self.poster = self.gp_evaluators[0]
+            else:
+                logging.info("Initializing discrete DMP Actor for saving OpenROAD results...")
+                self.poster = self._create_actor()
 
     def _create_actor(self):
         return DREAMPlaceActor.options(
@@ -376,6 +382,11 @@ class BasicPlacer:
         suffix = suffix_map[self.args.benchmark_type]
         file_name = os.path.join(self.placement_save_path, 
                                 f'{n_eval}.{suffix}')
+        
+        if self.args.benchmark_type == "openroad_def" and self.poster:
+             ray.get(self.poster.update_and_save.remote(macro_pos, placement_file=file_name))
+             return
+
         type_map = {
             "aux" : write_pl,
             "def" : write_def,
@@ -387,6 +398,11 @@ class BasicPlacer:
     def plot(self, macro_pos:dict, n_eval:int):
         logging.info("Placer plotting figure")
         file_name = os.path.join(self.fig_save_path, f"{n_eval}.png")
+
+        if self.args.benchmark_type == "openroad_def" and self.poster:
+             ray.get(self.poster.update_and_save.remote(macro_pos, figure_file=file_name))
+             return
+
         self._plot_macro(macro_pos, file_name)
 
 
