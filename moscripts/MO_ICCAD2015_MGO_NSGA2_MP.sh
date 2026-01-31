@@ -1,7 +1,7 @@
 problem_formulation=mgo
 algo=nsga2
 
-for benchmark in superblue3 # superblue4 superblue5 superblue7 superblue10 superblue16 superblue18
+for benchmark in superblue1 superblue3 superblue4 superblue5 superblue7 superblue10 superblue16 superblue18
 do
 python ../src/main.py \
     --gpu="0,1,2,3"\
