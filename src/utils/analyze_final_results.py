@@ -83,7 +83,7 @@ def calculate_hv(pareto_front, ref_point=None):
         print(f"Error calculating HV: {e}")
         return 0.0
 
-def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None, hv_value=None):
+def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None, hv_value=None, max_num_points=None):
     """
     Plot the Pareto front. Supports 2D and 3D.
     """
@@ -96,6 +96,22 @@ def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None,
         obj_labels = [f"Obj {i+1}" for i in range(n_obj)]
     
     print(f"Plotting Pareto front with objectives: {obj_labels}")
+    
+    # Apply max_points limit
+    if max_num_points is not None and len(pareto_front) > max_num_points:
+        print(f"Limiting Pareto front to {max_num_points} points.")
+        nds = NonDominatedSorting()
+        fronts = nds.do(pareto_front)
+        selected_points = []
+        for front in fronts:
+            if len(selected_points) + len(front) <= max_num_points:
+                selected_points.extend(front)
+            else:
+                remaining = max_num_points - len(selected_points)
+                selected_points.extend(front[:remaining])
+                break
+        pareto_front = pareto_front[selected_points]
+
     fig = plt.figure(figsize=(10, 8))
     
     title = f"Pareto Front ({n_obj}D)"
@@ -114,8 +130,6 @@ def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None,
         ax.scatter(pareto_front[:, 0], pareto_front[:, 1], c='red', s=60, edgecolors='black', label='Selected Solutions', zorder=2)
         
         # Connect the dots for 2D Pareto Front (Trade-off line)
-        # Note: We sort to make the line look nice, even if not strictly a Pareto front line if dominated solutions are present (though they shouldn't be for "Pareto Front" plotting generally)
-        # Identify non-dominated points within the set for the line
         nds = NonDominatedSorting()
         fronts = nds.do(pareto_front)
         nd_indices = fronts[0]
@@ -154,12 +168,13 @@ def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None,
     print(f"Pareto front plot saved to {save_path}")
     plt.close()
 
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze Final Results")
     parser.add_argument("--result_path", type=str, required=True, help="Path to the result directory (containing metrics.csv and checkpoint/)")
     parser.add_argument("--ref_point", type=float, nargs='+', help="Reference point for HV calculation (space-separated values)")
     parser.add_argument("--obj_labels", type=str, nargs='+', help="Labels for objectives (space-separated)")
-    
+    parser.add_argument("--max_num_points", type=int, default=None, help="Maximum number of points to plot in the Pareto front")
     args = parser.parse_args()
     
     print(f"Analyzing final results in: {args.result_path}")
@@ -231,7 +246,7 @@ def main():
     
     # 3. Plot Pareto Front
     plot_file = os.path.join(args.result_path, "final_solutions_plot.png")
-    plot_pareto_front(final_Y, plot_file, args.obj_labels, all_points=all_points, hv_value=hv)
+    plot_pareto_front(final_Y, plot_file, args.obj_labels, all_points=all_points, hv_value=hv, max_num_points=args.max_num_points)
     
     # 4. Save Analysis Summary
     summary_file = os.path.join(args.result_path, "final_analysis_summary.txt")
