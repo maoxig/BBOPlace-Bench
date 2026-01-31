@@ -74,9 +74,10 @@ class NSGAIII(BasicAlgo):
         
         # Generate reference directions for NSGA-III
         self.ref_dirs = get_reference_directions(
-            "uniform", 
+            "energy", 
             len(self.eval_metrics), 
-            n_points = self.args.n_population
+            n_points = self.args.n_population,
+            seed=1
         )
         
         self.args.__dict__.update(

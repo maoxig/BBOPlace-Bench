@@ -73,9 +73,10 @@ class MOEADDE(BasicAlgo):
         
         # Generate reference directions for MOEAD
         self.ref_dirs = get_reference_directions(
-            "uniform", 
+            "energy", 
             len(self.eval_metrics), 
-            n_points = self.args.n_population
+            n_points = self.args.n_population,
+            seed=1
         )
 
         self.args.__dict__.update(
@@ -112,7 +113,6 @@ class MOEADDE(BasicAlgo):
 
         self._algo = MOEAD(
             ref_dirs=self.ref_dirs,
-            pop_size=self.args.n_population,
             sampling=sampling,
             crossover=OPS_REGISTRY["crossover"][self.args.placer][self.args.crossover](self.args),
             mutation=OPS_REGISTRY["mutation"][self.args.placer][self.args.mutation](self.args),
