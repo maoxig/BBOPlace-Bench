@@ -153,15 +153,15 @@ class BasicAlgo:
         if not pool:
             return []
 
-        # Deduplicate based on Y (Optional: might want to keep diversity in X, but standard is obj space dedup for evaluation)
-        unique_pool = []
-        seen_Y = set()
-        for cand in pool:
-            y_tuple = tuple(cand['Y'])
-            if y_tuple not in seen_Y:
-                seen_Y.add(y_tuple)
-                unique_pool.append(cand)
-        pool = unique_pool
+        # Deduplicate based on Y - DISABLED to preserve population diversity for analysis
+        # unique_pool = []
+        # seen_Y = set()
+        # for cand in pool:
+        #     y_tuple = tuple(cand['Y'])
+        #     if y_tuple not in seen_Y:
+        #         seen_Y.add(y_tuple)
+        #         unique_pool.append(cand)
+        # pool = unique_pool
         
         if not pool:
             return []
