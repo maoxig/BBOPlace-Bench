@@ -70,7 +70,6 @@ class BasicPlacer:
         self.counter = 0
         
         self.gp_evaluators = []
-        self.poster = None
         
         # Initialize resources info
         num_cpus = getattr(self.args, 'num_cpus', 1)
@@ -86,13 +85,6 @@ class BasicPlacer:
             # Use max_restarts=-1 (infinite restarts) and max_task_retries=-1
             # But crucially, use max_calls to restart actor after N calls to clear memory leaks
             self.gp_evaluators = [self._create_actor() for _ in range(n_workers)]
-            
-        if self.args.benchmark_type == "openroad_def" and self.args.placer != 'hpo':
-            if len(self.gp_evaluators) > 0:
-                self.poster = self.gp_evaluators[0]
-            else:
-                logging.info("Initializing discrete DMP Actor for saving OpenROAD results...")
-                self.poster = self._create_actor()
 
     def _create_actor(self):
         return DREAMPlaceActor.options(
@@ -372,7 +364,7 @@ class BasicPlacer:
         return res, macro_pos_list
 
 
-    def save_placement(self, macro_pos, n_eval):
+    def save_placement(self, macro_pos, n_eval, params=None):
         logging.info("Placer saving placement")
         suffix_map = {
             "aux" : "pl",
@@ -383,10 +375,6 @@ class BasicPlacer:
         file_name = os.path.join(self.placement_save_path, 
                                 f'{n_eval}.{suffix}')
         
-        if self.args.benchmark_type == "openroad_def" and self.poster:
-             ray.get(self.poster.update_and_save.remote(macro_pos, placement_file=file_name))
-             return
-
         type_map = {
             "aux" : write_pl,
             "def" : write_def,
@@ -395,15 +383,37 @@ class BasicPlacer:
         type_map[self.args.benchmark_type](file_name, macro_pos, self.placedb)
         
     
-    def plot(self, macro_pos:dict, n_eval:int):
+    def plot(self, macro_pos:dict, n_eval:int, params=None):
         logging.info("Placer plotting figure")
         file_name = os.path.join(self.fig_save_path, f"{n_eval}.png")
-
-        if self.args.benchmark_type == "openroad_def" and self.poster:
-             ray.get(self.poster.update_and_save.remote(macro_pos, figure_file=file_name))
-             return
-
         self._plot_macro(macro_pos, file_name)
+
+    def save_solution(self, macro_pos, n_eval, params=None):
+        """
+        Save both placement (def/pl) and figure (png).
+        Optimized for OpenROAD to use a single temporary actor.
+        """
+        if self.args.benchmark_type == "openroad_def":
+             logging.info("Creating temporary actor for saving OpenROAD solution...")
+             actor = self._create_actor()
+             try:
+                 suffix = "def"
+                 placement_file = os.path.join(self.placement_save_path, f'{n_eval}.{suffix}')
+                 figure_file = os.path.join(self.fig_save_path, f"{n_eval}.png")
+                 
+                 ray.get(actor.evaluate_macro_pos.remote(
+                     macro_pos, 
+                     placement_file=placement_file, 
+                     figure_file=figure_file, 
+                     save_result=True
+                 ))
+             except Exception as e:
+                 logging.error(f"Error saving OpenROAD solution: {e}")
+             finally:
+                 ray.kill(actor)
+        else:
+            self.save_placement(macro_pos, n_eval, params)
+            self.plot(macro_pos, n_eval, params)
 
 
     def _manage_saved_files(self, directory, max_files):

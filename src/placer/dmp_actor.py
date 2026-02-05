@@ -98,22 +98,6 @@ class DREAMPlaceActor:
         self.placer = NonLinearPlace(self.params, self.placedb, timer=timer)
         
 
-    def update_and_save(self, macro_pos, placement_file=None, figure_file=None):
-        """
-        Update macro positions and save placement/figure without full optimization phase
-        """
-        self._setup_dmp_scale_factor()
-        self._update_macro_pos(macro_pos)
-        if self.placer is None:
-            self.__init_placer()
-        self._update_dmp_placer()
-        
-        if placement_file:
-             self.save_placement(placement_file)
-        if figure_file:
-             self.plot(figure_file)
-        return True
-
     def evaluate_macro_pos(self, macro_pos, placement_file=None, figure_file=None, save_result = False):
         """
         评估 HPWL

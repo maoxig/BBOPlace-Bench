@@ -95,8 +95,6 @@ class HPOPlacer(BasicPlacer):
         self.actors = [self._create_actor() for _ in range(n_workers)]
         # 将 actors 赋值给 gp_evaluators 以复用 BasicPlacer 的逻辑
         self.gp_evaluators = self.actors
-        if self.args.benchmark_type == "openroad_def":
-             self.poster = self.actors[0]
         
 
     def _create_actor(self):
@@ -182,7 +180,7 @@ class HPOPlacer(BasicPlacer):
             lb, ub, tf = params_space[param_name]
             # 稍微放宽边界检查，避免浮点误差
             if not (lb - EPS < value < ub + EPS):
-                print(f"Warning: Parameter {param_name} (={value}) is out of bound [{lb}, {ub}].")
+                 pass
             
             param_value = tf(value)
             
@@ -190,7 +188,7 @@ class HPOPlacer(BasicPlacer):
                 # Global placement 阶段参数
                 params_to_update.setdefault("global_place_stages", [{}])
                 subject = params_to_update["global_place_stages"][0]
-                entry_name = param_name.lstrip("GP_")
+                entry_name = param_name.replace("GP_", "")
             else:
                 # 其他参数
                 subject = params_to_update
@@ -199,6 +197,50 @@ class HPOPlacer(BasicPlacer):
             subject[entry_name] = param_value
         
         return params_to_update
+
+    def save_solution(self, macro_pos, n_eval, params=None):
+        if self.args.benchmark_type == "openroad_def" and params is not None:
+             logging.info("Creating temporary actor for saving OpenROAD solution (HPO)...")
+             actor = self._create_actor()
+             try:
+                 suffix = "def"
+                 placement_file = os.path.join(self.placement_save_path, f'{n_eval}.{suffix}')
+                 figure_file = os.path.join(self.fig_save_path, f"{n_eval}.png")
+                 
+                 params_update = None
+                 if isinstance(params, (list, np.ndarray)):
+                     params_name = list(params_space.keys())
+                     xi_dict = dict(zip(params_name, list(params)))
+                     params_update = self._load_genotype(xi_dict)
+                 elif isinstance(params, dict):
+                     # Check if it has keys from params_space
+                     if set(params.keys()).intersection(params_space.keys()):
+                         params_update = self._load_genotype(params)
+                     else:
+                         params_update = params
+
+                 if params_update:
+                     ray.get(actor.evaluate_hyper_params.remote(
+                         params_update, 
+                         self.placedb.macro_lst, 
+                         placement_file=placement_file, 
+                         figure_file=figure_file, 
+                         save_result=True
+                     ))
+                 else:
+                     ray.get(actor.evaluate_macro_pos.remote(
+                         macro_pos, 
+                         placement_file=placement_file, 
+                         figure_file=figure_file, 
+                         save_result=True
+                     ))
+                 
+             except Exception as e:
+                 logging.error(f"Error saving OpenROAD HPO solution: {e}")
+             finally:
+                 ray.kill(actor)
+        else:
+            super().save_solution(macro_pos, n_eval, params)
 
     def _genotype2phenotype(self, x: Union[List, Dict]):
         """

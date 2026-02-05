@@ -206,6 +206,14 @@ class BasicAlgo:
         # Limit artifacts saving to top K solutions (e.g., 5)
         # This allows saving all population data in pkl/csv but only generating expensive artifacts for the best ones
         K_ARTIFACTS = 5 
+        
+        # Kill existing actors to free resources for saving artifacts
+        if hasattr(self.placer, "gp_evaluators") and self.placer.gp_evaluators:
+            logging.info("Cleaning up existing evaluators to free resources for saving...")
+            for actor in self.placer.gp_evaluators:
+                ray.kill(actor)
+            self.placer.gp_evaluators = []
+            
         logging.info(f"Generating artifacts (def/png) for top {min(len(final_solutions), K_ARTIFACTS)} solutions.")
 
         for i, sol in enumerate(final_solutions):
@@ -216,16 +224,13 @@ class BasicAlgo:
             macro_pos = sol['macro_pos']
             
             # 1. MP Saving: Save simple artifacts (PL, PNG)
-            self.placer.save_placement(macro_pos, sol_id)
-            self.placer.plot(macro_pos, sol_id)
+            # Pass sol['X'] (parameters/genotype) if available, for HPO or complex saving
+            params_arg = sol.get('X') if isinstance(sol.get('X'), (list, np.ndarray, dict)) else None
+            self.placer.save_solution(macro_pos, sol_id, params=params_arg)
             
             # 2. GP Saving: Re-run actor if available to generate GP artifacts
             if self.args.eval_gp_hpwl:
                 try:
-                    # kill existing actors to free resources
-                    for actor in self.placer.gp_evaluators:
-                        ray.kill(actor)
-                    self.placer.gp_evaluators = []
                     # Create a temporary actor for saving elite solutions to ensure isolation
                     actor = self.placer._create_actor()
                     
