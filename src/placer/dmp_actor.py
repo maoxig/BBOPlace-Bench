@@ -456,9 +456,11 @@ class DREAMPlaceActor:
                 "sdc_input": suffix2path(".sdc"),
             })
         elif self.args_dict.get("benchmark_type", "") == "openroad_def" and self.args_dict.get("placer", "") == "hpo":
-            self.params.def_input = self.params.def_input.replace("replace.def","raw.def") # raw.def: all free ; replace.def: with macros fixed
+            if "raw.def" not in self.params.def_input:
+                 self.params.def_input = self.params.def_input.replace("replace.def","raw.def")  # raw.def: all free ; replace.def: with macros fixed
         elif self.args_dict.get("benchmark_type", "") == "openroad_def" and self.args_dict.get("placer", "") != "hpo":
-            self.params.def_input = self.params.def_input.replace("raw.def","replace.def") # raw.def: all free ; replace.def: with macros fixed
+            if "replace.def" not in self.params.def_input:
+                 self.params.def_input = self.params.def_input.replace("raw.def","replace.def") # replace.def: with macros fixed ; raw.def: all free
         # 设置输出目录和其他参数
         self.params.fromJson({
             "plot_flag": 0,
@@ -482,6 +484,11 @@ class DREAMPlaceActor:
             id = self.placedb.node_name2id_map.get(macro_name, None)
             if id is None:
                 id = self.placedb.node_name2id_map.get(macro_name.replace(".DREAMPlace.Shape0",""))
-            macro_pos[macro_name] = (node_x[id], node_y[id])
+            
+            if id is not None:
+                macro_pos[macro_name] = (node_x[id], node_y[id])
+            # Else: skip missing macros to avoid crash. 
+            # In HPO, standard cells move, macros might be fixed or movable. 
+            # If macro_lst asks for something not in DB, better skip than crash.
         return macro_pos
     

@@ -57,7 +57,7 @@ def _comp_net_hpwl(macro_pos, placedb):
 
 def _comp_res_rudy_improved(net_hpwl, placedb, num_bins_x=64, num_bins_y=64):
     """
-    改进的RUDY计算，参考DREAMPlace实现
+    改进的RUDY计算，参考DREAMPlace实现 - Vectorized Optimiazation
     
     关键改进：
     1. 使用粗粒度bin grid而非pixel-level
@@ -65,49 +65,83 @@ def _comp_res_rudy_improved(net_hpwl, placedb, num_bins_x=64, num_bins_y=64):
     3. 正确计算net bounding box与bin的重叠面积
     4. 考虑net权重
     5. 最终取两个方向的最大值
+    6. 使用 NumPy 向量化替代 Python 循环以避免大规模网表时的卡顿
     """
     
-    # 计算bin尺寸
+    if not net_hpwl:
+        return 0.0
+
+    # 1. 准备数据: 将字典转换为 Numpy 数组
+    net_names = list(net_hpwl.keys())
+    coords = np.array(list(net_hpwl.values()), dtype=np.float32) # Shape: [N_nets, 4]
+    
+    min_x = coords[:, 0]
+    min_y = coords[:, 1]
+    max_x = coords[:, 2]
+    max_y = coords[:, 3]
+    
+    # 获取权重
+    weights = np.array([placedb.net_info[name].get("weight", 1.0) for name in net_names], dtype=np.float32)
+    
+    # 预计算分母 (防止除零)
+    net_widths = max_x - min_x + 1e-6
+    net_heights = max_y - min_y + 1e-6
+    
+    # 计算因子: weight / dimension
+    # RUDY: horizontal_util += area / height * weight
+    #       vertical_util   += area / width  * weight
+    h_factor = weights / net_heights
+    v_factor = weights / net_widths
+    
+    # 2. 向量化网格计算 (按列扫描以控制内存峰值)
     bin_size_x = placedb.canvas_width / num_bins_x
     bin_size_y = placedb.canvas_height / num_bins_y
     
-    # 初始化水平和垂直方向的利用率map
+    # 预先生成 Y 轴的 Bin 边界，用于广播计算
+    # shape: (1, num_bins_y)
+    y_bin_edges = np.arange(num_bins_y + 1, dtype=np.float32) * bin_size_y
+    y_bin_starts = y_bin_edges[:-1][np.newaxis, :] 
+    y_bin_ends = y_bin_edges[1:][np.newaxis, :]    
+    
     horizontal_utilization = np.zeros((num_bins_x, num_bins_y), dtype=np.float32)
     vertical_utilization = np.zeros((num_bins_x, num_bins_y), dtype=np.float32)
     
-    for net_name, (min_x, min_y, max_x, max_y) in net_hpwl.items():
-        # 获取net权重（如果有）
-        net_weight = placedb.net_info[net_name].get("weight", 1.0)
+    # 按列 (X轴 Bin) 遍历
+    for bx in range(num_bins_x):
+        bin_lx = bx * bin_size_x
+        bin_ux = (bx + 1) * bin_size_x
         
-        # 计算net影响的bin范围
-        bin_xl = max(0, int((min_x) / bin_size_x))
-        bin_xh = min(num_bins_x, int((max_x) / bin_size_x) + 1)
-        bin_yl = max(0, int((min_y) / bin_size_y))
-        bin_yh = min(num_bins_y, int((max_y) / bin_size_y) + 1)
+        # Vectorized: 计算所有 nets 在当前 bin column (X方向) 的重叠长度
+        # intersection of [min_x, max_x] and [bin_lx, bin_ux]
+        overlap_x = np.maximum(0, np.minimum(max_x, bin_ux) - np.maximum(min_x, bin_lx))
         
-        # net的尺寸（加epsilon避免除零）
-        net_width = max_x - min_x + 1e-6
-        net_height = max_y - min_y + 1e-6
+        # 筛选：只处理涉及当前列的 nets (overlap_x > 0)
+        mask = overlap_x > 1e-6
+        if not np.any(mask):
+            continue
+            
+        # 提取活跃 nets 的数据
+        active_overlap_x = overlap_x[mask]       # (M,)
+        active_min_y = min_y[mask][:, np.newaxis] # (M, 1) -> 用于广播
+        active_max_y = max_y[mask][:, np.newaxis] # (M, 1)
+        active_h_factor = h_factor[mask][:, np.newaxis]
+        active_v_factor = v_factor[mask][:, np.newaxis]
         
-        # 遍历所有受影响的bin
-        for bx in range(bin_xl, bin_xh):
-            for by in range(bin_yl, bin_yh):
-                # 计算bin的坐标范围
-                bin_min_x = bx * bin_size_x
-                bin_max_x = (bx + 1) * bin_size_x
-                bin_min_y = by * bin_size_y
-                bin_max_y = (by + 1) * bin_size_y
-                
-                # 计算net bounding box与bin的重叠面积
-                overlap_x = max(0, min(max_x, bin_max_x) - max(min_x, bin_min_x))
-                overlap_y = max(0, min(max_y, bin_max_y) - max(min_y, bin_min_y))
-                overlap_area = overlap_x * overlap_y
-                
-                # RUDY核心公式：
-                # 水平方向：overlap_area / net_height（表示水平方向的routing需求）
-                # 垂直方向：overlap_area / net_width（表示垂直方向的routing需求）
-                horizontal_utilization[bx, by] += (overlap_area / net_height) * net_weight
-                vertical_utilization[bx, by] += (overlap_area / net_width) * net_weight
+        # Vectorized: 计算活跃 nets 在所有 Y Bins 的重叠长度
+        # result shape: (M, num_bins_y)
+        overlap_y = np.maximum(0, np.minimum(active_max_y, y_bin_ends) - np.maximum(active_min_y, y_bin_starts))
+        
+        # 综合计算 overlap_area 并加权
+        # area = active_overlap_x * overlap_y
+        # value = area * factor
+        # 为了高效，先将 x_overlap 乘入 factor 或者 y_overlap
+        
+        weighted_overlap_y = overlap_y * active_overlap_x[:, np.newaxis] # (M, num_bins_y)
+        
+        # 累加到当前列的所有 Bin 中
+        # sum over nets (axis 0)
+        horizontal_utilization[bx, :] = np.sum(weighted_overlap_y * active_h_factor, axis=0)
+        vertical_utilization[bx, :] = np.sum(weighted_overlap_y * active_v_factor, axis=0)
     
     # 归一化：除以bin面积
     bin_area = bin_size_x * bin_size_y
@@ -118,10 +152,11 @@ def _comp_res_rudy_improved(net_hpwl, placedb, num_bins_x=64, num_bins_y=64):
     route_utilization = np.maximum(horizontal_utilization, vertical_utilization)
     
     # 返回top-k平均值（类似原实现）
+    # 注意: partition 对 flatten 数组操作
     k = max(1, int(route_utilization.size * 0.1))
     rudy_score = np.partition(route_utilization.ravel(), -k)[-k:].mean()
     
-    return rudy_score
+    return float(rudy_score)
 
 def _comp_res_hpwl(net_hpwl, placedb):
     hpwl = 0.0
