@@ -21,5 +21,6 @@ python ../src/main.py \
     --eval_metrics='["hpwl","regularity","rudy2"]' \
     --eval_gp_hpwl=False \
     --n_max_saving_placement=5 \
+    --adaptive_normalization=True \
     --verbose=False
 done
