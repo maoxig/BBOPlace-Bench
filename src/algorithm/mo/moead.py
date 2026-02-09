@@ -8,7 +8,6 @@ from placer.hpo_placer import params_space
 from pymoo.algorithms.moo.moead import MOEAD
 from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.optimize import minimize
-from pymoo.core.evaluator import Evaluator
 from ..basic_algo import BasicAlgo
 import time
 import os
@@ -105,46 +104,17 @@ class MOEADDE(BasicAlgo):
         current_population = initial_population
 
         if current_population is None:
-            # Generate initial samples
             x = OPS_REGISTRY["sampling"][self.args.placer][self.args.sampling]( 
                 self.args, self.placer
             ).do(self.problem, self.args.n_population).get("X")
-            sampling = Population.new(X=x)
-            
-            # Pre-evaluate to estimate scaling for MOEAD
-            Evaluator().eval(self.problem, sampling)
-            F = sampling.get("F")
-            
-            # Estimate scale (max - min) or max absolute value
-            # Avoid division by zero
-            scale = np.max(F, axis=0) - np.min(F, axis=0)
-            scale = np.where(scale < 1e-6, 1.0, scale) # fallback for constant objectives
-            
-            # Adjust reference directions (weights) inversely proportional to scale
-            # MOEAD Tchebycheff: max_i lambda_i * (f_i - z_i)
-            # We want: max_i lambda_i * (f_i - z_i) / scale_i
-            # So new_lambda_i = lambda_i / scale_i
-            new_ref_dirs = self.ref_dirs / scale
-            
-            # Normalize so neighbor selection (Euclidean) makes sense?
-            # Actually, standard MOEAD expects normalized weights for neighbor selection usually.
-            # But the scalarization needs the un-normalized (scaled) weights.
-            # We use the scaled weights.
-            self.ref_dirs = new_ref_dirs
-            
+            sampling = Population.new(X=x) 
         else:
             sampling = current_population
-            # If loaded from checkpoint, we might want to estimate scale from it too?
-            # But ref_dirs might have been saved/init inside algorithm if we restored full algorithm state.
-            # Here we are creating new Algorithm instance.
-            # So we should probably scale ref_dirs based on loaded population too.
-            F = sampling.get("F")
-            scale = np.max(F, axis=0) - np.min(F, axis=0)
-            scale = np.where(scale < 1e-6, 1.0, scale)
-            self.ref_dirs = self.ref_dirs / scale
+        from pymoo.decomposition.pbi import PBI
 
         self._algo = MOEAD(
             ref_dirs=self.ref_dirs,
+            decomposition=PBI(),
             sampling=sampling,
             crossover=OPS_REGISTRY["crossover"][self.args.placer][self.args.crossover](self.args),
             mutation=OPS_REGISTRY["mutation"][self.args.placer][self.args.mutation](self.args),
