@@ -35,6 +35,15 @@ class AdaptiveDecomposition:
         if ideal is None:
             return self.method.do(F, weights, **kwargs)
 
+        # 1. Validate inputs and self.nadir consistency
+        # Determine number of objectives from input F
+        n_objs = F.shape[-1] if F.ndim > 0 else 0
+        
+        # If self.nadir exists but dimension mismatches, invalidate it so it gets re-initialized
+        if self.nadir is not None:
+             if self.nadir.size != n_objs:
+                 self.nadir = None
+
         # Update nadir
         # If algo is available, check pop
         current_F_pop = None
@@ -43,32 +52,51 @@ class AdaptiveDecomposition:
         
         candidates = []
         if self.nadir is not None:
-             candidates.append(np.atleast_2d(self.nadir))
+             # Ensure nadir is strictly 2D for stacking and has correct columns
+             nadir_2d = np.atleast_2d(self.nadir)
+             if nadir_2d.shape[1] == n_objs:
+                candidates.append(nadir_2d)
+             else:
+                self.nadir = None # Should not happen due to check above, but safe fallback
         
         if current_F_pop is not None and len(current_F_pop) > 0:
-             candidates.append(current_F_pop)
+             # Only add population if dimensions match
+             if current_F_pop.ndim < 2: current_F_pop = current_F_pop.reshape(-1, n_objs)
+             if current_F_pop.shape[1] == n_objs:
+                candidates.append(current_F_pop)
              
         if F.ndim == 1:
-             candidates.append(F.reshape(1, -1))
+             F_reshaped = F.reshape(1, -1)
+             if F_reshaped.shape[1] == n_objs:
+                 candidates.append(F_reshaped)
         else:
-             candidates.append(F)
+             if F.shape[1] == n_objs:
+                 candidates.append(F)
              
         if candidates:
              # Update global nadir estimate
              stack = np.vstack(candidates)
              
              if self.nadir is None:
-                 self.nadir = np.zeros(stack.shape[1])
+                 self.nadir = np.zeros(n_objs)
              
              # Robust update ignoring INF values (invalid solutions)
-             for i in range(stack.shape[1]):
+             for i in range(n_objs):
                  col = stack[:, i]
                  # Filter out values close to INF
                  valid_col = col[col < (INF * 0.9)]
+                 
+                 # Ensure we access self.nadir safely (it was re-inited to n_objs if needed)
                  if valid_col.size > 0:
                      self.nadir[i] = np.max(valid_col)
                  elif self.nadir[i] == 0:
                      self.nadir[i] = 1.0 # Default fallback if no valid values seen
+             else:
+                 # Fallback if candidates mismatch
+                 if self.nadir is None:
+                    self.nadir = np.ones(n_objs)
+
+
         
         if self.nadir is None:
              self.nadir = np.ones_like(ideal)
@@ -83,6 +111,10 @@ class AdaptiveDecomposition:
         
         F_norm = (F - local_ideal) / diff
         
+        # Remove ideal_point from kwargs to avoid multiple values error
+        if 'ideal_point' in kwargs:
+            del kwargs['ideal_point']
+
         return self.method.do(F_norm, weights, ideal_point=np.zeros_like(ideal), **kwargs)
 
 
