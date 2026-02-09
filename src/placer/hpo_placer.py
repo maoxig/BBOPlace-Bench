@@ -317,7 +317,7 @@ class HPOPlacer(BasicPlacer):
         pending_tasks = tasks[:] 
         
         # Configure timeout
-        TASK_TIMEOUT = getattr(self.args, "task_timeout", 300) # 5 minutes default
+        TASK_TIMEOUT = getattr(self.args, "task_timeout", 600) # 10 minutes default
 
         while len(pending_tasks) > 0 or len(busy_actors) > 0 or len(restarting_actors) > 0:
             current_time = time.time()
