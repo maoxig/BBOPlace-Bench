@@ -153,6 +153,10 @@ class DREAMPlaceActor:
         if isinstance(params_update, dict):
             self.params.fromJson(params_update)
 
+        # Re-initialize placer to ensure ops match new params (e.g. num_bins)
+        # This prevents issues where ops are configured with old parameters (like bin size)
+        self.__init_placer()
+
         self._update_dmp_placer()
         
         metrics = self.placer(self.params, self.placedb)

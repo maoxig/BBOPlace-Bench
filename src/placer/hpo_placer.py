@@ -312,11 +312,38 @@ class HPOPlacer(BasicPlacer):
         
         idle_actors = list(range(len(self.actors)))
         restarting_actors = {} # future (ping) -> actor_index
-        busy_actors = {} # future (work) -> (actor_index, task_index)
+        busy_actors = {} # future (work) -> (actor_index, task_index, start_time)
         
         pending_tasks = tasks[:] 
         
+        # Configure timeout
+        TASK_TIMEOUT = getattr(self.args, "task_timeout", 300) # 5 minutes default
+
         while len(pending_tasks) > 0 or len(busy_actors) > 0 or len(restarting_actors) > 0:
+            current_time = time.time()
+            
+            # 0. Check for timed out actors
+            timed_out_futures = []
+            for f, (actor_idx, task_idx, start_time) in busy_actors.items():
+                if current_time - start_time > TASK_TIMEOUT:
+                    timed_out_futures.append(f)
+            
+            for f in timed_out_futures:
+                actor_idx, task_idx, _ = busy_actors.pop(f)
+                logging.warning(f"Actor {actor_idx} timed out processing task {task_idx} (> {TASK_TIMEOUT}s). Killing and retrying...")
+                
+                # Kill and recreate actor
+                ray.kill(self.actors[actor_idx])
+                new_actor = self._create_actor()
+                self.actors[actor_idx] = new_actor
+                
+                # Ping to wait for initialization
+                ping_future = new_actor.evaluate_macro_pos.remote({})
+                restarting_actors[ping_future] = actor_idx
+                
+                # Requeue task
+                pending_tasks.insert(0, tasks[task_idx])
+
             # 1. Check for completed restarts
             if restarting_actors:
                 ready_futures, _ = ray.wait(list(restarting_actors.keys()), num_returns=len(restarting_actors), timeout=0)
@@ -345,21 +372,24 @@ class HPOPlacer(BasicPlacer):
                     placement_file=task["placement_file"],
                     figure_file=task["figure_file"]
                 )
-                busy_actors[future] = (actor_idx, task["index"])
+                busy_actors[future] = (actor_idx, task["index"], time.time())
             
             # 3. Wait for work to complete
             wait_list = list(busy_actors.keys()) + list(restarting_actors.keys())
             if not wait_list:
                 if not pending_tasks:
                     break
+                # Only restarting actors are left, wait a bit
+                time.sleep(0.1) 
                 continue
 
-            done_futures, _ = ray.wait(wait_list, num_returns=1)
+            # Use timeout to allow checking for timeouts in the loop
+            done_futures, _ = ray.wait(wait_list, num_returns=1, timeout=1.0)
             
             for f in done_futures:
                 if f in busy_actors:
                     # Work completed
-                    actor_idx, task_idx = busy_actors.pop(f)
+                    actor_idx, task_idx, _ = busy_actors.pop(f)
                     
                     try:
                         result = ray.get(f)
