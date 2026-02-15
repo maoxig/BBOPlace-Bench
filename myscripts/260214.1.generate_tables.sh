@@ -1,1 +1,1 @@
-python '/home/xp/project/BBOPlace-Bench/src/utils/generate_comparison_tables.py' --workspace /home/xp/project/BBOPlace-Bench
+python '/home/xp/project/BBOPlace-Bench/src/utils/generate_comparison_tables.py' --workspace /home/xp/project/BBOPlace-Bench --output /home/xp/project/BBOPlace-Bench/analysis_reports
