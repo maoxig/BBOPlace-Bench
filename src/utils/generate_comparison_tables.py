@@ -59,8 +59,27 @@ def compute_reference_point(all_fronts):
     if all_points.size == 0:
         return None
         
+
     # Calculate Nadir Point (max in each objective)
-    nadir_point = np.max(all_points, axis=0)
+    # Check for INF (1e16) and filter it out before calculating Nadir
+    # If all points are INF in a dimension, then Reference Point will be INF (HV = 0 makes sense)
+    
+    # Simple logic: If any point is >= 1e15 (near INF), we ignore it for reference point calculation
+    # to avoid skewing the HV for other valid solutions.
+    # HOWEVER, if an algorithm produces INF solutions, they are dominated by valid ones.
+    # But if we include INF in ref point calculation, the volume becomes huge.
+    # Usually in optimization benchmarks, we might use a fixed reference point or the worst valid point.
+    
+    # Strategy: Filter out points that are "too large" (failed runs/constraints violated significantly)
+    # assuming they are outliers, unless ALL points are large.
+    
+    valid_mask = np.all(all_points < 1e14, axis=1)
+    if np.any(valid_mask):
+        valid_points = all_points[valid_mask]
+        nadir_point = np.max(valid_points, axis=0)
+    else:
+        # Fallback if everything is huge
+        nadir_point = np.max(all_points, axis=0)
     
     # Apply a small margin (e.g., 1.1x) to ensure extreme points calculate correctly
     # Use a small epsilon for stability if values are 0 (though unlikely for cost metrics)
@@ -134,6 +153,103 @@ def generate_markdown_table(benchmark_name, mode, hv_data):
         
     return "\n".join(md_output)
 
+def generate_latex_table(benchmark_name, mode, hv_data):
+    """
+    Generate a LaTeX table string for academic papers.
+    hv_data format: { case: { (formulation, algo): hv_value } }
+    """
+    cases = BENCHMARKS[benchmark_name]["cases"]
+
+
+    # Header Construction
+    latex_output = []
+    latex_output.append(r"\begin{table*}[t]")
+    latex_output.append(r"\centering")
+    latex_output.append(r"\caption{Hypervolume Comparison on " + benchmark_name + " (" + mode + r" Mode)}")
+    latex_output.append(r"\label{tab:" + benchmark_name.lower() + r"_" + mode.lower() + r"}")
+    latex_output.append(r"\resizebox{\textwidth}{!}{")
+    
+    # Column definition: Case (l) + 2 * 5 Algorithms (c)
+    col_def = "l" + "c" * (len(FORMULATIONS) * len(ALGOS))
+    latex_output.append(r"\begin{tabular}{" + col_def + r"}")
+    latex_output.append(r"\toprule")
+    
+    # Header Row 1: Formulation Spanning
+    # e.g., \multirow{2}{*}{Benchmarks} & \multicolumn{5}{c}{MGO} & \multicolumn{5}{c}{HPO} \\
+    header_1 = r"\multirow{2}{*}{Benchmarks}"
+    for form in FORMULATIONS:
+         header_1 += r" & \multicolumn{" + str(len(ALGOS)) + r"}{c}{\textbf{" + form + r"}}"
+    header_1 += r" \\"
+    latex_output.append(header_1)
+    
+    # Header Row 2: CMidrules
+    # \cmidrule(lr){2-6} \cmidrule(lr){7-11}
+    cmid_indices = []
+    current_idx = 2
+    for _ in FORMULATIONS:
+        cmid_indices.append(f"{current_idx}-{current_idx + len(ALGOS) - 1}")
+        current_idx += len(ALGOS)
+    
+    cmid_str = " ".join([r"\cmidrule(lr){" + s + r"}" for s in cmid_indices])
+    latex_output.append(cmid_str)
+
+    # Header Row 3: Algorithm Names
+    header_2 = ""
+    for _ in FORMULATIONS:
+        for algo in ALGOS:
+            header_2 += r" & " + algo
+    header_2 += r" \\"
+    latex_output.append(header_2)
+    latex_output.append(r"\midrule")
+    
+    # Data Rows
+    for case in cases:
+        row_str = case.replace("_", r"\_")
+        
+        for form in FORMULATIONS:
+            # 1. Determine local max and exponent per Formulation (MGO / HPO independently)
+            form_values = []
+            for algo in ALGOS:
+                val = hv_data.get(case, {}).get((form, algo), None)
+                if val is not None and isinstance(val, (int, float)):
+                    form_values.append(val)
+            
+            max_val = max(form_values) if form_values else 0.0
+            
+            if max_val > 0:
+                sci_str_max = "{:.2e}".format(max_val)
+                _, max_exponent_str = sci_str_max.split("e")
+                form_exponent = int(max_exponent_str)
+            else:
+                form_exponent = 0
+
+            # 2. Format values for this formulation
+            for algo in ALGOS:
+                val = hv_data.get(case, {}).get((form, algo), None)
+                
+                if val is not None and isinstance(val, (int, float)):
+                    # Normalize to form_exponent
+                    base = val / (10 ** form_exponent)
+                    
+                    tex_val = r"${:.2f} \times 10^{{{}}}$".format(base, form_exponent)
+                    
+                    if val == max_val and max_val > 0:
+                         tex_val = r"\underline{" + tex_val + r"}"
+                         
+                    row_str += " & " + tex_val
+                else:
+                    row_str += " & -"
+                    
+        row_str += r" \\"
+        latex_output.append(row_str)
+        
+    latex_output.append(r"\bottomrule")
+    latex_output.append(r"\end{tabular}")
+    latex_output.append(r"}") # End resizebox
+    latex_output.append(r"\end{table*}")
+    
+    return "\n".join(latex_output)
+
 def analyze_benchmark(benchmark_name, output_dir, workspace_root):
     cases = BENCHMARKS[benchmark_name]["cases"]
     prefix = BENCHMARKS[benchmark_name]["prefix"]
@@ -152,65 +268,60 @@ def analyze_benchmark(benchmark_name, output_dir, workspace_root):
             hv_results = {}
             
             for case in cases:
-                # 1. Collect all solution fronts for this case + mode to determine Ref Point
-                case_fronts = []
-                temp_dict = {} # (form, algo) -> front
+                hv_results[case] = {}
                 
-                valid_case = False 
+                # We need to compute Reference Point independently for each Formulation
+                # because MGO and HPO have different objectives (metrics).
+                # Setting = (Benchmark Case, Formulation)
                 
                 for form in FORMULATIONS:
+                    # Collect all fronts for this specific Setting (Formulation)
+                    # to compute a unified Reference Point for the 5 Algos within this Formulation.
+                    form_fronts = []
+                    temp_dict = {} # algo -> front
+                    
                     for algo in ALGOS:
-                        # Construct path
-                        # Folder name: MO_{BENCHMARK}_{FORM}_{ALGO}_{MODE}
-                        # e.g., MO_OPENROAD_MGO_NSGA2_GP
-                        # Actual structure: results/case/Full_Name/form(lower)/algo(lower)/seed_timestamp/checkpoint
-                        
                         folder_name = f"{prefix}_{form}_{algo}_{mode}"
                         base_result_path = os.path.join(results_dir, case, folder_name, form.lower(), algo.lower())
                         
                         final_path = None
                         if os.path.exists(base_result_path):
-                            # Find the latest seed folder
                             subdirs = [f for f in os.listdir(base_result_path) if os.path.isdir(os.path.join(base_result_path, f))]
-                            subdirs.sort() # Sorts by seed_X_YYYY... so latest date is last
+                            subdirs.sort()
                             if subdirs:
                                 final_path = os.path.join(base_result_path, subdirs[-1])
                         
                         if final_path:
                             front = load_pareto_front(final_path)
                             if front is not None:
-                                case_fronts.append(front)
-                                temp_dict[(form, algo)] = front
-                                valid_case = True
-                            else:
-                                # Start verbose check only if directory existed but front failed loading
-                                # print(f"  Front failed to load for {final_path}")
-                                pass
-                        else:
-                             # print(f"  Path not found: {base_result_path}")
-                             pass
-                            
-                hv_results[case] = {}
-                
-                if not valid_case:
-                    print(f"  No results found for case: {case}")
-                    continue
-                
-                # 2. Compute Unified Reference Point
-                if case_fronts:
-                    ref_point = compute_reference_point(case_fronts)
-                    # print(f"  Case {case}: Ref Point = {ref_point}")
+                                form_fronts.append(front)
+                                temp_dict[algo] = front
                     
-                    # 3. Calculate HV for each
-                    for (key, front) in temp_dict.items():
-                        hv_val = calculate_hv(front, ref_point)
-                        hv_results[case][key] = hv_val
+                    if not form_fronts:
+                         # No results for this formulation in this case
+                         continue
+                         
+                    # Compute Ref Point for this Formulation
+                    ref_point = compute_reference_point(form_fronts)
+                    
+                    # Calculate HV for each Algo in this Formulation using the formulation-specific Ref Point
+                    for algo, front in temp_dict.items():
+                         hv_val = calculate_hv(front, ref_point)
+                         hv_results[case][(form, algo)] = hv_val
             
-            # 4. Generate Table
+
+            # 4. Generate Markdown Table
             f.write(f"## {mode} Mode Results\n\n")
             table_md = generate_markdown_table(benchmark_name, mode, hv_results)
             f.write(table_md)
             f.write("\n\n")
+            
+            # 5. Generate LaTeX Table
+            latex_file = os.path.join(output_dir, f"{benchmark_name}_{mode}_Table.tex")
+            table_latex = generate_latex_table(benchmark_name, mode, hv_results)
+            with open(latex_file, "w") as lf:
+                lf.write(table_latex)
+            print(f"  LaTeX table saved to {latex_file}")
             
     print(f"Analysis saved to {analysis_file}")
 

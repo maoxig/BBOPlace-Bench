@@ -13,9 +13,6 @@
 | superblue16 | 1.8134e+04 | 2.0529e+04 | 1.5114e+04 | 1.7928e+04 | 1.9323e+04 | 7.8130e+07 | 7.8751e+07 | 8.1693e+07 | 7.8588e+07 | 8.5800e+07 |
 | superblue18 | 7.0886e+03 | 6.4649e+03 | 5.8489e+03 | 8.1587e+03 | 8.6699e+03 | 1.6827e+06 | 1.6022e+06 | 2.0138e+06 | 1.6585e+06 | 2.0212e+06 |
 
-
----
-
 ## MP Mode Results
 
 | Case | MGO-NSGA2 | MGO-NSGA3 | MGO-MOEAD | MGO-SMSEMOA | MGO-SPEA2 | HPO-NSGA2 | HPO-NSGA3 | HPO-MOEAD | HPO-SMSEMOA | HPO-SPEA2 |
