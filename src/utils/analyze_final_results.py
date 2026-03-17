@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import argparse
 import pickle
+import itertools
 from pymoo.indicators.hv import HV
 from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 
@@ -188,6 +189,135 @@ def plot_pareto_front(pareto_front, save_path, obj_labels=None, all_points=None,
     plt.close()
 
 
+def plot_2d_projections(pareto_front, result_path, obj_labels=None, all_points=None):
+    n_obj = pareto_front.shape[1]
+    if n_obj < 3:
+        return
+
+    if obj_labels is None:
+        obj_labels = [f"Obj {i+1}" for i in range(n_obj)]
+
+    pairs = list(itertools.combinations(range(n_obj), 2))
+    
+    for i, j in pairs:
+        label_x = obj_labels[i]
+        label_y = obj_labels[j]
+        
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        # Plot all visited points
+        if all_points is not None:
+             if all_points.shape[1] > max(i, j):
+                ax.scatter(all_points[:, i], all_points[:, j], c='lightgray', s=10, alpha=0.3, label='Visited', zorder=1)
+        
+        ax.scatter(pareto_front[:, i], pareto_front[:, j], c='blue', s=40, edgecolors='black', label='Pareto Solution (Proj)', zorder=2, alpha=0.8)
+        
+        proj_points = pareto_front[:, [i, j]]
+        proj_points = np.unique(proj_points, axis=0)
+        
+        nds = NonDominatedSorting()
+        fronts = nds.do(proj_points)
+        if len(fronts) > 0:
+            nd_indices = fronts[0]
+            nd_front = proj_points[nd_indices]
+            sorted_indices = np.argsort(nd_front[:, 0])
+            sorted_front = nd_front[sorted_indices]
+            ax.plot(sorted_front[:, 0], sorted_front[:, 1], c='red', alpha=0.7, linestyle='--', linewidth=1.5, zorder=3, label='2D Trade-off')
+            
+        ax.set_xlabel(label_x, fontsize=12)
+        ax.set_ylabel(label_y, fontsize=12)
+        ax.set_title(f"Projection: {label_x} vs {label_y}", fontsize=14)
+        ax.grid(True, linestyle=':', alpha=0.6)
+        ax.legend()
+        
+        save_name = f"projection_{i}_{j}_{label_x}_vs_{label_y}.png".replace("/", "_").replace(" ", "_")
+        save_full_path = os.path.join(result_path, save_name)
+        plt.tight_layout()
+        plt.savefig(save_full_path, dpi=300)
+        print(f"Saved 2D projection: {save_full_path}")
+        plt.close()
+
+def plot_parallel_coordinates(pareto_front, save_path, obj_labels=None):
+    n_obj = pareto_front.shape[1]
+    if n_obj < 2: 
+        return
+
+    if obj_labels is None:
+        obj_labels = [f"Obj {i+1}" for i in range(n_obj)]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    min_vals = np.min(pareto_front, axis=0)
+    max_vals = np.max(pareto_front, axis=0)
+    ranges = max_vals - min_vals
+    ranges[ranges == 0] = 1 
+    
+    norm_front = (pareto_front - min_vals) / ranges
+    
+    for k in range(len(norm_front)):
+        ax.plot(range(n_obj), norm_front[k], c='blue', alpha=0.4, linewidth=1)
+        
+    ax.set_xticks(range(n_obj))
+    ax.set_xticklabels(obj_labels, fontsize=11)
+    ax.set_ylabel("Normalized Objective Value", fontsize=12)
+    ax.set_title("Parallel Coordinates Plot (Normalized)", fontsize=14)
+    ax.grid(True, linestyle=':', alpha=0.6)
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    print(f"Saved Parallel Coordinates plot: {save_path}")
+    plt.close()
+
+def plot_scatter_matrix(pareto_front, save_path, obj_labels=None, all_points=None):
+    n_obj = pareto_front.shape[1]
+    if n_obj < 3:
+        return
+        
+    if obj_labels is None:
+        obj_labels = [f"Obj {i+1}" for i in range(n_obj)]
+        
+    fig, axes = plt.subplots(n_obj, n_obj, figsize=(3.5*n_obj, 3.5*n_obj))
+    
+    for i in range(n_obj): 
+        for j in range(n_obj): 
+            # Handle 1D axes if n_obj=1 .. but we checked <3
+            ax = axes[i, j]
+            
+            if i == j:
+                # Diagonal: Histogram
+                ax.hist(pareto_front[:, i], bins=min(10, len(pareto_front)), color='skyblue', alpha=0.7, edgecolor='black')
+                ax.set_title(obj_labels[i], fontsize=10, fontweight='bold')
+            else:
+                # Scatter
+                if all_points is not None and all_points.shape[1] > max(i, j):
+                    ax.scatter(all_points[:, j], all_points[:, i], c='lightgray', s=5, alpha=0.2, rasterized=True)
+                
+                ax.scatter(pareto_front[:, j], pareto_front[:, i], c='blue', s=15, edgecolors='none', alpha=0.8)
+                
+                proj = pareto_front[:, [j, i]]
+                nds = NonDominatedSorting()
+                fronts = nds.do(proj)
+                if len(fronts) > 0:
+                     nd = proj[fronts[0]]
+                     nd = nd[np.argsort(nd[:, 0])]
+                     ax.plot(nd[:, 0], nd[:, 1], c='red', alpha=0.5, linewidth=1, linestyle='--')
+
+            if i == n_obj - 1:
+                ax.set_xlabel(obj_labels[j], fontsize=9)
+            if j == 0:
+                ax.set_ylabel(obj_labels[i], fontsize=9)
+            
+            if i < n_obj - 1:
+                ax.set_xticklabels([])
+            if j > 0:
+                ax.set_yticklabels([])
+    
+    plt.suptitle(f"Scatter Matrix ({n_obj}D)", fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(save_path, dpi=300)
+    print(f"Saved scatter matrix to {save_path}")
+    plt.close()
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze Final Results")
     parser.add_argument("--result_path", type=str, required=True, help="Path to the result directory (containing metrics.csv and checkpoint/)")
@@ -266,6 +396,16 @@ def main():
     # 3. Plot Pareto Front
     plot_file = os.path.join(args.result_path, "final_solutions_plot.png")
     plot_pareto_front(final_Y, plot_file, args.obj_labels, all_points=all_points, hv_value=hv, max_num_points=args.max_num_points)
+
+    # 3b. Additional Plots (Projections, Parallel Coordinates, Scatter Matrix)
+    print("Generating additional visualization...")
+    plot_2d_projections(final_Y, args.result_path, args.obj_labels, all_points=all_points)
+    
+    pcp_file = os.path.join(args.result_path, "final_solutions_pcp.png")
+    plot_parallel_coordinates(final_Y, pcp_file, args.obj_labels)
+    
+    scatter_matrix_file = os.path.join(args.result_path, "final_solutions_scatter_matrix.png")
+    plot_scatter_matrix(final_Y, scatter_matrix_file, args.obj_labels, all_points=all_points)
     
     # 4. Save Analysis Summary
     summary_file = os.path.join(args.result_path, "final_analysis_summary.txt")
