@@ -1,0 +1,1786 @@
+{
+  "seed": 1,
+  "generated_at": "2026-03-23T08:40:22.020512",
+  "benchmarks": {
+    "OpenROAD": {
+      "benchmark": "OpenROAD",
+      "seed": 1,
+      "modes": {
+        "GP": {
+          "cases": {
+            "ariane133": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "ariane136": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "bp": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "bp_be": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "bp_fe": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "swerv_wrapper": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            }
+          }
+        },
+        "MP": {
+          "cases": {
+            "ariane133": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "ariane136": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "bp": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "bp_be": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "bp_fe": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            },
+            "swerv_wrapper": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "NSGA3": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "MOEAD": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SMSEMOA": {
+                    "hv": null,
+                    "run_path": null
+                  },
+                  "SPEA2": {
+                    "hv": null,
+                    "run_path": null
+                  }
+                },
+                "best_algo": null,
+                "best_hv": null,
+                "best_run_path": null,
+                "reference_point": null
+              }
+            }
+          }
+        }
+      }
+    },
+    "ICCAD2015": {
+      "benchmark": "ICCAD2015",
+      "seed": 1,
+      "modes": {
+        "GP": {
+          "cases": {
+            "superblue1": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 26333.32183968936,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-01-31_11-03-59"
+                  },
+                  "NSGA3": {
+                    "hv": 20099.989033384147,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-07_16-33-13"
+                  },
+                  "MOEAD": {
+                    "hv": 30543.027448612513,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-09_12-14-07"
+                  },
+                  "SMSEMOA": {
+                    "hv": 26472.937671165266,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-01-31_11-04-02"
+                  },
+                  "SPEA2": {
+                    "hv": 42947.598224272326,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-09_11-54-31"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 42947.598224272326,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-09_11-54-31",
+                "reference_point": [
+                  762096896.0000011,
+                  0.019449031298816206,
+                  0.08520638359880447
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 14196.180045829391,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-01-31_15-59-00"
+                  },
+                  "NSGA3": {
+                    "hv": 14853.989218485778,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-07_16-34-02"
+                  },
+                  "MOEAD": {
+                    "hv": 14679.834099788473,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-10_06-33-44"
+                  },
+                  "SMSEMOA": {
+                    "hv": 13630.035813825221,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-01-31_15-59-20"
+                  },
+                  "SPEA2": {
+                    "hv": 20219.132269065492,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-09_14-23-33"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 20219.132269065492,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-09_14-23-33",
+                "reference_point": [
+                  573400291.200001,
+                  0.005014222992420197,
+                  0.035326661301612855
+                ]
+              }
+            },
+            "superblue3": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 101422.49474601008,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-01-31_13-54-45"
+                  },
+                  "NSGA3": {
+                    "hv": 75988.01033410525,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-07_19-17-21"
+                  },
+                  "MOEAD": {
+                    "hv": 51824.32254572652,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-10_07-13-42"
+                  },
+                  "SMSEMOA": {
+                    "hv": 69043.0159023195,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-01-31_13-59-23"
+                  },
+                  "SPEA2": {
+                    "hv": 63288.24720555914,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-09_15-15-37"
+                  }
+                },
+                "best_algo": "NSGA2",
+                "best_hv": 101422.49474601008,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-01-31_13-54-45",
+                "reference_point": [
+                  1013983731.200001,
+                  0.027000443583190443,
+                  0.10641030384397508
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 145106.51774920546,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-01-31_19-47-42"
+                  },
+                  "NSGA3": {
+                    "hv": 159279.3613391361,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-07_19-39-03"
+                  },
+                  "MOEAD": {
+                    "hv": 23036.408387927935,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-10_14-11-09"
+                  },
+                  "SMSEMOA": {
+                    "hv": 137176.75070174807,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-01-31_20-02-36"
+                  },
+                  "SPEA2": {
+                    "hv": 136708.61492549212,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-09_17-54-37"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 159279.3613391361,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-07_19-39-03",
+                "reference_point": [
+                  647986521.600001,
+                  0.01876511959528923,
+                  0.07600273056125642
+                ]
+              }
+            },
+            "superblue4": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 24870.57354949376,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-01-31_19-11-19"
+                  },
+                  "NSGA3": {
+                    "hv": 30462.56820309512,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-08_00-40-39"
+                  },
+                  "MOEAD": {
+                    "hv": 34011.724577138186,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-11_02-47-21"
+                  },
+                  "SMSEMOA": {
+                    "hv": 26334.112559454064,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-01-31_19-18-16"
+                  },
+                  "SPEA2": {
+                    "hv": 40532.29280886887,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-09_21-33-44"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 40532.29280886887,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-09_21-33-44",
+                "reference_point": [
+                  532355401.60000104,
+                  0.016520892495125533,
+                  0.07320014996623994
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 59526069.729193985,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-02-01_01-00-10"
+                  },
+                  "NSGA3": {
+                    "hv": 63121731.63295971,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-07_22-51-42"
+                  },
+                  "MOEAD": {
+                    "hv": 88793423.43519372,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-11_01-23-05"
+                  },
+                  "SMSEMOA": {
+                    "hv": 61412472.350730546,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-02-01_00-49-08"
+                  },
+                  "SPEA2": {
+                    "hv": 88788212.3018142,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-09_22-13-26"
+                  }
+                },
+                "best_algo": "MOEAD",
+                "best_hv": 88793423.43519372,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-11_01-23-05",
+                "reference_point": [
+                  8707848089.600002,
+                  0.011321465616881847,
+                  0.945864574743271
+                ]
+              }
+            },
+            "superblue5": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 141883.1363232022,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-01-31_22-11-10"
+                  },
+                  "NSGA3": {
+                    "hv": 154265.64065601694,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-08_03-41-00"
+                  },
+                  "MOEAD": {
+                    "hv": 117296.98856344724,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-11_13-46-55"
+                  },
+                  "SMSEMOA": {
+                    "hv": 136733.5337002197,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-01-31_22-00-46"
+                  },
+                  "SPEA2": {
+                    "hv": 141146.55502850373,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-10_01-39-05"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 154265.64065601694,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-08_03-41-00",
+                "reference_point": [
+                  1114998297.600001,
+                  0.01907522821968794,
+                  0.10278830690479279
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 10534131.268027375,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-02-01_05-37-02"
+                  },
+                  "NSGA3": {
+                    "hv": 10526693.085429752,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-08_01-18-52"
+                  },
+                  "MOEAD": {
+                    "hv": 11268598.6109577,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-11_06-36-32"
+                  },
+                  "SMSEMOA": {
+                    "hv": 10532090.310901314,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-02-01_04-38-24"
+                  },
+                  "SPEA2": {
+                    "hv": 11398630.445868181,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-10_01-22-53"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 11398630.445868181,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-10_01-22-53",
+                "reference_point": [
+                  3276824038.400001,
+                  0.005778354631572963,
+                  0.6999784992465974
+                ]
+              }
+            },
+            "superblue7": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 37831.940706356894,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-02-01_02-23-17"
+                  },
+                  "NSGA3": {
+                    "hv": 48337.31004959477,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-08_08-10-00"
+                  },
+                  "MOEAD": {
+                    "hv": 37104.87291887753,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-12_03-40-30"
+                  },
+                  "SMSEMOA": {
+                    "hv": 53773.29270777239,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-02-01_02-13-55"
+                  },
+                  "SPEA2": {
+                    "hv": 34624.7883027773,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-10_14-38-21"
+                  }
+                },
+                "best_algo": "SMSEMOA",
+                "best_hv": 53773.29270777239,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-02-01_02-13-55",
+                "reference_point": [
+                  1053758041.6000011,
+                  0.011409499069511891,
+                  0.1008064867386818
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 46900835.00948637,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-02-01_09-45-44"
+                  },
+                  "NSGA3": {
+                    "hv": 44773202.96206855,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-08_04-36-55"
+                  },
+                  "MOEAD": {
+                    "hv": 53863747.4612153,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-11_18-45-55"
+                  },
+                  "SMSEMOA": {
+                    "hv": 44899083.36540366,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-02-01_08-38-48"
+                  },
+                  "SPEA2": {
+                    "hv": 54005231.310880944,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-11_13-55-23"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 54005231.310880944,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-11_13-55-23",
+                "reference_point": [
+                  6461165568.000002,
+                  0.011481595078319312,
+                  0.8096971200237275
+                ]
+              }
+            },
+            "superblue10": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 22922.14718481512,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-02-01_10-19-39"
+                  },
+                  "NSGA3": {
+                    "hv": 30431.159556918155,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-08_16-30-26"
+                  },
+                  "MOEAD": {
+                    "hv": 21680.55844555868,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-15_03-45-19"
+                  },
+                  "SMSEMOA": {
+                    "hv": 22341.48162993035,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-02-15_03-45-16"
+                  },
+                  "SPEA2": {
+                    "hv": 18518.947596714082,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-10_23-06-51"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 30431.159556918155,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-08_16-30-26",
+                "reference_point": [
+                  1109557785.600001,
+                  0.010352354908198119,
+                  0.1141229161450863
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 74334.98574799417,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-02-01_15-43-50"
+                  },
+                  "NSGA3": {
+                    "hv": 75317.06411094642,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-08_09-02-42"
+                  },
+                  "MOEAD": {
+                    "hv": 77788.07846267357,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-12_03-11-57"
+                  },
+                  "SMSEMOA": {
+                    "hv": 71079.12285494237,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-02-01_13-14-31"
+                  },
+                  "SPEA2": {
+                    "hv": 82973.60785761976,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-11_18-51-20"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 82973.60785761976,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-11_18-51-20",
+                "reference_point": [
+                  1261762304.000001,
+                  0.0023245316853970294,
+                  0.11733133657073976
+                ]
+              }
+            },
+            "superblue16": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 18134.171058023894,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-02-01_18-07-54"
+                  },
+                  "NSGA3": {
+                    "hv": 20528.797766074786,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-09_01-25-34"
+                  },
+                  "MOEAD": {
+                    "hv": 15113.625805787822,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-15_15-55-42"
+                  },
+                  "SMSEMOA": {
+                    "hv": 17928.01314888183,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-02-01_17-04-45"
+                  },
+                  "SPEA2": {
+                    "hv": 19323.2526292147,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-11_06-34-17"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 20528.797766074786,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-09_01-25-34",
+                "reference_point": [
+                  597621798.400001,
+                  0.02120951390063763,
+                  0.11413566855883599
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 78129737.45173688,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-02-01_20-42-47"
+                  },
+                  "NSGA3": {
+                    "hv": 78751452.24578436,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-08_13-25-55"
+                  },
+                  "MOEAD": {
+                    "hv": 81692810.34433836,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-12_17-15-17"
+                  },
+                  "SMSEMOA": {
+                    "hv": 78587594.05750984,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-02-01_17-42-59"
+                  },
+                  "SPEA2": {
+                    "hv": 85800248.0901138,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-12_02-45-29"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 85800248.0901138,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-12_02-45-29",
+                "reference_point": [
+                  2752271104.000001,
+                  0.05589257566428185,
+                  0.6865776465663911
+                ]
+              }
+            },
+            "superblue18": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 7088.607638039258,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_NSGA2_GP/mgo/nsga2/seed_1_2026-02-01_21-51-00"
+                  },
+                  "NSGA3": {
+                    "hv": 6464.924762541054,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_NSGA3_GP/mgo/nsga3/seed_1_2026-02-09_05-28-29"
+                  },
+                  "MOEAD": {
+                    "hv": 5848.929940598018,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_MOEAD_GP/mgo/moead/seed_1_2026-02-15_15-58-11"
+                  },
+                  "SMSEMOA": {
+                    "hv": 8158.718348822373,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_SMSEMOA_GP/mgo/smsemoa/seed_1_2026-02-01_20-45-19"
+                  },
+                  "SPEA2": {
+                    "hv": 8669.932052042408,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-11_10-18-11"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 8669.932052042408,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_SPEA2_GP/mgo/spea2/seed_1_2026-02-11_10-18-11",
+                "reference_point": [
+                  334615388.800001,
+                  0.00970208937472105,
+                  0.08854601619935036
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 1682744.0909743025,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_NSGA2_GP/hpo/nsga2/seed_1_2026-02-01_23-24-58"
+                  },
+                  "NSGA3": {
+                    "hv": 1602181.9298330317,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_NSGA3_GP/hpo/nsga3/seed_1_2026-02-08_15-33-24"
+                  },
+                  "MOEAD": {
+                    "hv": 2013835.8021315937,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_MOEAD_GP/hpo/moead/seed_1_2026-02-13_01-52-01"
+                  },
+                  "SMSEMOA": {
+                    "hv": 1658477.7526813901,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_SMSEMOA_GP/hpo/smsemoa/seed_1_2026-02-01_20-27-13"
+                  },
+                  "SPEA2": {
+                    "hv": 2021192.7799621844,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-12_05-31-54"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 2021192.7799621844,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_SPEA2_GP/hpo/spea2/seed_1_2026-02-12_05-31-54",
+                "reference_point": [
+                  632326323.200001,
+                  0.019975234327673914,
+                  0.28492247624492645
+                ]
+              }
+            }
+          }
+        },
+        "MP": {
+          "cases": {
+            "superblue1": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 52555.68504772272,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_09-27-25"
+                  },
+                  "NSGA3": {
+                    "hv": 125710.75657470382,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_16-33-29"
+                  },
+                  "MOEAD": {
+                    "hv": 123328.2524818279,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-09_12-12-32"
+                  },
+                  "SMSEMOA": {
+                    "hv": 90807.89656963175,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_09-30-20"
+                  },
+                  "SPEA2": {
+                    "hv": 117311.20541730258,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_11-54-11"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 125710.75657470382,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_16-33-29",
+                "reference_point": [
+                  88220.93480457141,
+                  2277.9850859529874,
+                  0.021404588540852074
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 81160779.45726353,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-01-31_11-12-20"
+                  },
+                  "NSGA3": {
+                    "hv": 102321959.5809802,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-07_18-57-47"
+                  },
+                  "MOEAD": {
+                    "hv": 103052498.21707952,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-09_15-06-35"
+                  },
+                  "SMSEMOA": {
+                    "hv": 84381917.7169065,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-01-31_11-20-01"
+                  },
+                  "SPEA2": {
+                    "hv": 95643030.71418417,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-09_14-23-27"
+                  }
+                },
+                "best_algo": "MOEAD",
+                "best_hv": 103052498.21707952,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-09_15-06-35",
+                "reference_point": [
+                  1120746.1087124934,
+                  2904.7383264036266,
+                  0.1460601644048691
+                ]
+              }
+            },
+            "superblue3": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 679499.5634357424,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_10-39-43"
+                  },
+                  "NSGA3": {
+                    "hv": 1460307.8006182634,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_17-46-25"
+                  },
+                  "MOEAD": {
+                    "hv": 1400034.2310373685,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-09_23-59-55"
+                  },
+                  "SMSEMOA": {
+                    "hv": 756497.4033652475,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_10-43-36"
+                  },
+                  "SPEA2": {
+                    "hv": 1291170.411837878,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_13-03-44"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 1460307.8006182634,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_17-46-25",
+                "reference_point": [
+                  227647.74990278622,
+                  2324.775970195291,
+                  0.05257446890866757
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 115928287.84466833,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-01-31_16-13-37"
+                  },
+                  "NSGA3": {
+                    "hv": 148078500.61965954,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-07_22-07-22"
+                  },
+                  "MOEAD": {
+                    "hv": 127395085.71114556,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-09_22-15-26"
+                  },
+                  "SMSEMOA": {
+                    "hv": 110731386.98911783,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-01-31_16-03-59"
+                  },
+                  "SPEA2": {
+                    "hv": 144463434.69358438,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-09_18-40-57"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 148078500.61965954,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue3/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-07_22-07-22",
+                "reference_point": [
+                  1580861.092730473,
+                  2857.874484860236,
+                  0.21173802925443652
+                ]
+              }
+            },
+            "superblue4": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 780098.431051827,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_11-55-23"
+                  },
+                  "NSGA3": {
+                    "hv": 627995.9388368389,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_19-00-11"
+                  },
+                  "MOEAD": {
+                    "hv": 419169.08724316204,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-10_12-56-07"
+                  },
+                  "SMSEMOA": {
+                    "hv": 593843.154183964,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_11-59-55"
+                  },
+                  "SPEA2": {
+                    "hv": 447544.1126634726,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_14-18-00"
+                  }
+                },
+                "best_algo": "NSGA2",
+                "best_hv": 780098.431051827,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_11-55-23",
+                "reference_point": [
+                  142554.1229563573,
+                  1684.2802912052289,
+                  0.04464055387473107
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 18000172.765865184,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-01-31_22-49-49"
+                  },
+                  "NSGA3": {
+                    "hv": 23789838.474435575,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-08_02-46-52"
+                  },
+                  "MOEAD": {
+                    "hv": 22715899.087169036,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-10_07-28-55"
+                  },
+                  "SMSEMOA": {
+                    "hv": 18112876.4650918,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-01-31_21-23-26"
+                  },
+                  "SPEA2": {
+                    "hv": 23721351.782021757,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-09_23-56-53"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 23789838.474435575,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue4/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-08_02-46-52",
+                "reference_point": [
+                  601260.4476606194,
+                  1864.7179059603184,
+                  0.17160380644893647
+                ]
+              }
+            },
+            "superblue5": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 35930127.41337882,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_12-55-31"
+                  },
+                  "NSGA3": {
+                    "hv": 54254676.86880022,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_20-00-27"
+                  },
+                  "MOEAD": {
+                    "hv": 50979477.814555265,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-10_22-29-36"
+                  },
+                  "SMSEMOA": {
+                    "hv": 38483213.323181644,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_13-01-32"
+                  },
+                  "SPEA2": {
+                    "hv": 56110566.96272317,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_15-17-25"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 56110566.96272317,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_15-17-25",
+                "reference_point": [
+                  1029005.2561259994,
+                  2857.6537317397742,
+                  0.18786442889070512
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 631465702.5273329,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-02-01_04-22-53"
+                  },
+                  "NSGA3": {
+                    "hv": 829314950.630481,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-08_06-53-18"
+                  },
+                  "MOEAD": {
+                    "hv": 589579846.8993372,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-10_13-40-12"
+                  },
+                  "SMSEMOA": {
+                    "hv": 649525025.6914637,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-02-01_03-55-06"
+                  },
+                  "SPEA2": {
+                    "hv": 917265446.523659,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-10_04-07-15"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 917265446.523659,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue5/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-10_04-07-15",
+                "reference_point": [
+                  6269256.415283036,
+                  3273.9397267502345,
+                  0.25959160937166215
+                ]
+              }
+            },
+            "superblue7": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 573381.5393512091,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_14-04-01"
+                  },
+                  "NSGA3": {
+                    "hv": 1016737.3569607224,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_21-05-13"
+                  },
+                  "MOEAD": {
+                    "hv": 776523.6604271242,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-11_09-26-55"
+                  },
+                  "SMSEMOA": {
+                    "hv": 577527.9927771016,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_14-11-29"
+                  },
+                  "SPEA2": {
+                    "hv": 825610.4444354047,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_16-22-17"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 1016737.3569607224,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_21-05-13",
+                "reference_point": [
+                  200723.28394742866,
+                  2166.799478474233,
+                  0.048165145648479464
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 95657731.10859448,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-02-01_10-23-54"
+                  },
+                  "NSGA3": {
+                    "hv": 143076758.77667582,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-08_11-24-10"
+                  },
+                  "MOEAD": {
+                    "hv": 130554319.9804731,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-11_23-15-00"
+                  },
+                  "SMSEMOA": {
+                    "hv": 104243901.89333117,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-02-01_10-36-49"
+                  },
+                  "SPEA2": {
+                    "hv": 143637279.02469754,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-11_13-55-25"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 143637279.02469754,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue7/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-11_13-55-25",
+                "reference_point": [
+                  1518988.579128826,
+                  2784.0699301259133,
+                  0.1762352929840088
+                ]
+              }
+            },
+            "superblue10": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 4100.520776092342,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_15-41-06"
+                  },
+                  "NSGA3": {
+                    "hv": 15253.82257986176,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_22-40-10"
+                  },
+                  "MOEAD": {
+                    "hv": 14108.823063912436,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-12_02-13-44"
+                  },
+                  "SMSEMOA": {
+                    "hv": 4325.180703255795,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_15-50-17"
+                  },
+                  "SPEA2": {
+                    "hv": 14283.015446370138,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_18-00-08"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 15253.82257986176,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-07_22-40-10",
+                "reference_point": [
+                  53690.55396082145,
+                  2379.4067319278865,
+                  0.00942100150680542
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 21734633.644399047,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-02-01_18-52-02"
+                  },
+                  "NSGA3": {
+                    "hv": 25452478.080710173,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-08_16-30-10"
+                  },
+                  "MOEAD": {
+                    "hv": 26015184.62240922,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-12_21-15-51"
+                  },
+                  "SMSEMOA": {
+                    "hv": 18703083.974100843,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-02-01_17-05-19"
+                  },
+                  "SPEA2": {
+                    "hv": 26661092.267570887,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-11_17-51-10"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 26661092.267570887,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue10/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-11_17-51-10",
+                "reference_point": [
+                  687824.4200833061,
+                  3495.867164936498,
+                  0.06940888850188257
+                ]
+              }
+            },
+            "superblue16": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 310925.10736847064,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_17-25-13"
+                  },
+                  "NSGA3": {
+                    "hv": 665401.0642604744,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-08_00-20-22"
+                  },
+                  "MOEAD": {
+                    "hv": 590442.1948630889,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-12_19-47-18"
+                  },
+                  "SMSEMOA": {
+                    "hv": 313802.857965465,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_17-33-29"
+                  },
+                  "SPEA2": {
+                    "hv": 519745.96556412824,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_19-43-52"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 665401.0642604744,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-08_00-20-22",
+                "reference_point": [
+                  191931.06192957135,
+                  1464.5054123638342,
+                  0.05356278507208825
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 17962358.14023541,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-02-02_10-02-01"
+                  },
+                  "NSGA3": {
+                    "hv": 26957625.569642365,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-08_23-38-03"
+                  },
+                  "MOEAD": {
+                    "hv": 26073194.540611617,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-13_08-34-59"
+                  },
+                  "SMSEMOA": {
+                    "hv": 14520488.282882627,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-02-02_05-27-49"
+                  },
+                  "SPEA2": {
+                    "hv": 28882230.07695744,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-12_10-35-26"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 28882230.07695744,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue16/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-12_10-35-26",
+                "reference_point": [
+                  723061.9826980162,
+                  1847.23342415901,
+                  0.18331334157085422
+                ]
+              }
+            },
+            "superblue18": {
+              "MGO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 1454406.4910190199,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_18-24-38"
+                  },
+                  "NSGA3": {
+                    "hv": 2013141.502314921,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-08_01-16-45"
+                  },
+                  "MOEAD": {
+                    "hv": 2004221.4479741456,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_MOEAD_MP/mgo/moead/seed_1_2026-02-15_03-44-05"
+                  },
+                  "SMSEMOA": {
+                    "hv": 1343429.3779939453,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_SMSEMOA_MP/mgo/smsemoa/seed_1_2026-01-31_18-33-30"
+                  },
+                  "SPEA2": {
+                    "hv": 1780267.4126459276,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_SPEA2_MP/mgo/spea2/seed_1_2026-02-09_20-40-53"
+                  }
+                },
+                "best_algo": "NSGA3",
+                "best_hv": 2013141.502314921,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_MGO_NSGA3_MP/mgo/nsga3/seed_1_2026-02-08_01-16-45",
+                "reference_point": [
+                  119385.3201170714,
+                  1552.0742737155215,
+                  0.0601184682378769
+                ]
+              },
+              "HPO": {
+                "algorithms": {
+                  "NSGA2": {
+                    "hv": 12864293.51566888,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_NSGA2_MP/hpo/nsga2/seed_1_2026-02-02_12-43-00"
+                  },
+                  "NSGA3": {
+                    "hv": 25224625.819743276,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_NSGA3_MP/hpo/nsga3/seed_1_2026-02-09_01-45-45"
+                  },
+                  "MOEAD": {
+                    "hv": 24104103.3734867,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_MOEAD_MP/hpo/moead/seed_1_2026-02-15_15-59-11"
+                  },
+                  "SMSEMOA": {
+                    "hv": 14636214.455537384,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_SMSEMOA_MP/hpo/smsemoa/seed_1_2026-02-02_07-50-43"
+                  },
+                  "SPEA2": {
+                    "hv": 25697343.83511142,
+                    "run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-12_13-03-04"
+                  }
+                },
+                "best_algo": "SPEA2",
+                "best_hv": 25697343.83511142,
+                "best_run_path": "/home/xp/project/BBOPlace-Bench/results/superblue18/MO_ICCAD2015_HPO_SPEA2_MP/hpo/spea2/seed_1_2026-02-12_13-03-04",
+                "reference_point": [
+                  634511.4130954512,
+                  1851.623534311838,
+                  0.12180477021431924
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
