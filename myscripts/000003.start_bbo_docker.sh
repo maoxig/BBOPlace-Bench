@@ -2,6 +2,7 @@ docker run -it \
   --name mo-bbo \
   --gpus all \
   --rm \
+  --shm-size=16g \
   -u $(id -u):$(id -g) \
   -v /etc/passwd:/etc/passwd:ro \
   -v /etc/group:/etc/group:ro \

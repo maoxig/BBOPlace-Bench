@@ -14,12 +14,24 @@ set -euo pipefail
 #   3: workspace root absolute path
 #   4: round label
 #   5: window name
+#   6: log file absolute path
+#   7: tmp dir
+#   8: wandb dir
+#   9: wandb cache dir
+#  10: wandb config dir
+#  11: wandb data dir
 
 SCRIPT_NAME="${1:?missing script name}"
 TARGET_DIR="${2:?missing target dir}"
 ROOT_DIR="${3:?missing root dir}"
 ROUND_LABEL="${4:?missing round label}"
 WINDOW_NAME="${5:?missing window name}"
+LOG_FILE="${6:?missing log file}"
+TMP_DIR="${7:-}"
+WANDB_DIR_PATH="${8:-}"
+WANDB_CACHE_DIR_PATH="${9:-}"
+WANDB_CONFIG_DIR_PATH="${10:-}"
+WANDB_DATA_DIR_PATH="${11:-}"
 
 DOCKER_IMAGE="${DOCKER_IMAGE:-crt/bboplace-bench:cuda}"
 DOCKER_CONTAINER_PREFIX="${DOCKER_CONTAINER_PREFIX:-mo-bbo}"
@@ -56,7 +68,7 @@ if [[ "${DOCKER_USE_PRIVILEGED}" == "1" ]]; then
   docker_args+=(--privileged)
 fi
 
-inner_cmd="cd '${TARGET_DIR}' && echo '[START][${ROUND_LABEL}] ${SCRIPT_NAME} (docker)' && bash '${SCRIPT_NAME}' 2>&1 | tee -a '${SCRIPT_NAME%.sh}.${ROUND_LABEL}.log'"
+inner_cmd="set -m; trap 'jobs -pr | xargs -r kill -TERM >/dev/null 2>&1 || true' INT TERM; mkdir -p '${TMP_DIR}' '${WANDB_DIR_PATH}' '${WANDB_CACHE_DIR_PATH}' '${WANDB_CONFIG_DIR_PATH}' '${WANDB_DATA_DIR_PATH}' && export TMPDIR='${TMP_DIR}' TEMP='${TMP_DIR}' TMP='${TMP_DIR}' WANDB_DIR='${WANDB_DIR_PATH}' WANDB_CACHE_DIR='${WANDB_CACHE_DIR_PATH}' WANDB_CONFIG_DIR='${WANDB_CONFIG_DIR_PATH}' WANDB_DATA_DIR='${WANDB_DATA_DIR_PATH}' && cd '${TARGET_DIR}' && echo '[START][${ROUND_LABEL}] ${SCRIPT_NAME} (docker)' && bash '${SCRIPT_NAME}' 2>&1 | tee -a '${LOG_FILE}'"
 
 if container_running; then
   :
@@ -66,4 +78,9 @@ else
   docker "${docker_args[@]}" "${DOCKER_IMAGE}" /bin/bash -lc "${DOCKER_KEEP_ALIVE_CMD}" >/dev/null
 fi
 
-docker exec -i "${DOCKER_CONTAINER_NAME}" /bin/bash -lc "${inner_cmd}"
+exec_io=(-i)
+if [[ -t 0 && -t 1 ]]; then
+  exec_io=(-it)
+fi
+
+docker exec "${exec_io[@]}" "${DOCKER_CONTAINER_NAME}" /bin/bash -lc "${inner_cmd}"

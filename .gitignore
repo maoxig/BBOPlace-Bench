@@ -33,3 +33,6 @@ sock_path
 
 dataflow_info
 dataflow_graph
+run_log
+run_artifacts
+*.log

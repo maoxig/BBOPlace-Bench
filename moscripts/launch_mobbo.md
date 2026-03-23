@@ -51,6 +51,18 @@ FILTER_BENCHMARKS=OPENROAD FILTER_MODES=MP FILTER_PLACERS=MGO bash moscripts/lau
 START_INDEX=10 LIMIT=5 bash moscripts/launch_mobbo_tmux.sh
 ```
 
+## 逐窗口手动确认执行
+
+如果你希望每个窗口都先停住，手动按 Enter 后再开始跑：
+```bash
+CONFIRM_BEFORE_RUN=1 bash moscripts/launch_mobbo_tmux.sh
+```
+
+行为说明：
+- 每个窗口会先显示 `READY` 提示并等待输入。
+- 在该窗口按 Enter 才会真正执行对应脚本。
+- 若不想执行该窗口，可按 `Ctrl+C` 跳过。
+
 ## Docker 模式（可选）
 
 ### 使用 docker 包装器运行每个窗口
@@ -65,7 +77,7 @@ DRY_RUN=1 ENABLE_DOCKER=1 bash moscripts/launch_mobbo_tmux.sh
 
 ## docker_run_wrapper.sh 可配项
 - `DOCKER_IMAGE`（默认 `crt/bboplace-bench:cuda`）
-- `DOCKER_CONTAINER_PREFIX`（默认 `mo-bboplace-bench`）
+- `DOCKER_CONTAINER_PREFIX`（默认 `mo-bbo`）
 - `DOCKER_NETWORK_MODE`（默认 `host`）
 - `DOCKER_USE_PRIVILEGED`（默认 `1`）
 - `DOCKER_GPUS`（默认 `all`）
@@ -82,6 +94,28 @@ bash moscripts/launch_mobbo_tmux.sh
 ```bash
 tmux list-windows -t MOBBO
 tmux attach -t MOBBO
+```
+
+## 日志与临时目录治理（含 wandb）
+
+默认日志会写到：
+`run_logs/<ROUND_LABEL>/`
+
+默认临时产物（含 `TMPDIR` 与 `WANDB_*`）会写到：
+`run_artifacts/<ROUND_LABEL>/<script_name>/`
+
+这样可以避免在 `moscripts/` 下继续堆积 `tmp*` 与 `.log`。
+
+你也可以自定义：
+```bash
+LOG_DIR=/data/xp/mobbo_logs \
+ARTIFACT_DIR=/data/xp/mobbo_artifacts \
+bash moscripts/launch_mobbo_tmux.sh
+```
+
+清理已产生的 `moscripts/tmp*` 目录（启动前执行）：
+```bash
+CLEAN_TMP_DIRS_IN_MOSCRIPTS=1 bash moscripts/launch_mobbo_tmux.sh
 ```
 
 ## 调试与环境建议

@@ -32,10 +32,16 @@ ENABLE_DOCKER="${ENABLE_DOCKER:-0}"            # 1: run each task through docker
 DOCKER_WRAPPER_SCRIPT="${DOCKER_WRAPPER_SCRIPT:-moscripts/docker_run_wrapper.sh}"
 TMUX_REMAIN_ON_EXIT="${TMUX_REMAIN_ON_EXIT:-1}" # keep dead windows for debugging
 CONDA_ENV_NAME="${CONDA_ENV_NAME:-}"            # optional, e.g. base
+KEEP_SHELL_AFTER_EXIT="${KEEP_SHELL_AFTER_EXIT:-1}" # keep interactive shell after task exits
+LOG_DIR="${LOG_DIR:-${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/run_logs/${ROUND_LABEL}}"
+CLEAN_TMP_DIRS_IN_MOSCRIPTS="${CLEAN_TMP_DIRS_IN_MOSCRIPTS:-0}" # remove moscripts/tmp* dirs before launching
+ARTIFACT_DIR="${ARTIFACT_DIR:-${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/run_artifacts/${ROUND_LABEL}}"
+CONFIRM_BEFORE_RUN="${CONFIRM_BEFORE_RUN:-0}"   # 1: require Enter in each tmux window before actual run
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_DIR="${ROOT_DIR}/${SCRIPTS_DIR}"
 DOCKER_WRAPPER_PATH="${ROOT_DIR}/${DOCKER_WRAPPER_SCRIPT}"
+LOG_DIR="${LOG_DIR//\{ROOT_DIR\}/${ROOT_DIR}}"
 
 if ! command -v tmux >/dev/null 2>&1; then
   echo "[ERROR] tmux not found in PATH" >&2
@@ -153,9 +159,27 @@ echo "[INFO] round label   : ${ROUND_LABEL}"
 echo "[INFO] selected count: ${#selected[@]}"
 echo "[INFO] use docker    : ${ENABLE_DOCKER}"
 echo "[INFO] remain-on-exit: ${TMUX_REMAIN_ON_EXIT}"
+echo "[INFO] keep-shell    : ${KEEP_SHELL_AFTER_EXIT}"
+echo "[INFO] confirm-run   : ${CONFIRM_BEFORE_RUN}"
+echo "[INFO] log dir       : ${LOG_DIR}"
+echo "[INFO] artifact dir  : ${ARTIFACT_DIR}"
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   echo "[INFO] DRY_RUN=1, no tmux command will be executed"
+fi
+
+if [[ "${DRY_RUN}" != "1" ]]; then
+  mkdir -p "${LOG_DIR}"
+  mkdir -p "${ARTIFACT_DIR}"
+fi
+
+if [[ "${CLEAN_TMP_DIRS_IN_MOSCRIPTS}" == "1" ]]; then
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "[DRY-RUN] would remove tmp* dirs under ${TARGET_DIR}"
+  else
+    find "${TARGET_DIR}" -maxdepth 1 -type d -name 'tmp*' -exec rm -rf {} +
+    echo "[INFO] cleaned tmp* dirs in ${TARGET_DIR}"
+  fi
 fi
 
 if ! tmux has-session -t "${SESSION_NAME}" 2>/dev/null; then
@@ -169,7 +193,7 @@ else
   echo "[WARN] tmux session already exists: ${SESSION_NAME}"
 fi
 
-if [[ "${TMUX_REMAIN_ON_EXIT}" == "1" ]]; then
+if [[ "${TMUX_REMAIN_ON_EXIT}" == "1" && "${DRY_RUN}" != "1" ]]; then
   tmux set-option -t "${SESSION_NAME}" remain-on-exit on
 fi
 
@@ -192,19 +216,37 @@ for script in "${selected[@]}"; do
   fi
   win_used["${window_name}"]=1
 
+  log_file="${LOG_DIR}/${script%.sh}.${ROUND_LABEL}.log"
+  run_artifact_dir="${ARTIFACT_DIR}/${script%.sh}"
+  tmp_dir="${run_artifact_dir}/tmp"
+  wandb_dir="${run_artifact_dir}/wandb"
+  wandb_cache_dir="${run_artifact_dir}/wandb_cache"
+  wandb_config_dir="${run_artifact_dir}/wandb_config"
+  wandb_data_dir="${run_artifact_dir}/wandb_data"
+
+  env_prefix="mkdir -p '${tmp_dir}' '${wandb_dir}' '${wandb_cache_dir}' '${wandb_config_dir}' '${wandb_data_dir}' && export TMPDIR='${tmp_dir}' TEMP='${tmp_dir}' TMP='${tmp_dir}' WANDB_DIR='${wandb_dir}' WANDB_CACHE_DIR='${wandb_cache_dir}' WANDB_CONFIG_DIR='${wandb_config_dir}' WANDB_DATA_DIR='${wandb_data_dir}'"
+
   # Run from moscripts so relative paths in target scripts keep working.
   if [[ "${ENABLE_DOCKER}" == "1" ]]; then
-    full_cmd="bash '${DOCKER_WRAPPER_PATH}' '${script}' '${TARGET_DIR}' '${ROOT_DIR}' '${ROUND_LABEL}' '${window_name}'"
+    full_cmd="${env_prefix} && bash '${DOCKER_WRAPPER_PATH}' '${script}' '${TARGET_DIR}' '${ROOT_DIR}' '${ROUND_LABEL}' '${window_name}' '${log_file}' '${tmp_dir}' '${wandb_dir}' '${wandb_cache_dir}' '${wandb_config_dir}' '${wandb_data_dir}'"
   else
-    full_cmd="cd '${TARGET_DIR}' && echo '[START][${ROUND_LABEL}] ${script}' && bash '${script}' 2>&1 | tee -a '${script%.sh}.${ROUND_LABEL}.log'"
+    full_cmd="set -m; trap 'jobs -pr | xargs -r kill -TERM >/dev/null 2>&1 || true' INT TERM; ${env_prefix} && cd '${TARGET_DIR}' && echo '[START][${ROUND_LABEL}] ${script}' && bash '${script}' 2>&1 | tee -a '${log_file}'"
   fi
 
   if [[ -n "${CONDA_ENV_NAME}" ]]; then
     full_cmd="source \"\$HOME/.bashrc\" >/dev/null 2>&1 || true && conda activate '${CONDA_ENV_NAME}' && ${full_cmd}"
   fi
 
+  if [[ "${CONFIRM_BEFORE_RUN}" == "1" ]]; then
+    full_cmd="echo '[READY] ${script}'; echo '[READY] window=${window_name}'; echo '[READY] press Enter to start, Ctrl+C to skip'; read -r _confirm_input; ${full_cmd}"
+  fi
+
   quoted_cmd="$(printf '%q' "${full_cmd}")"
-  cmd="bash -lc ${quoted_cmd}"
+  if [[ "${KEEP_SHELL_AFTER_EXIT}" == "1" ]]; then
+    cmd="bash -lc ${quoted_cmd}; rc=\$?; echo '[EXIT] ${script} rc='\$rc; exec bash -l"
+  else
+    cmd="bash -lc ${quoted_cmd}"
+  fi
 
   if [[ "${DRY_RUN}" == "1" ]]; then
     echo "[DRY-RUN] window=${window_name} script=${script}"
