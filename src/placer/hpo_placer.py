@@ -316,8 +316,10 @@ class HPOPlacer(BasicPlacer):
         
         pending_tasks = tasks[:] 
         
-        # Configure timeout
-        TASK_TIMEOUT = getattr(self.args, "task_timeout", 600) # 10 minutes default
+
+        # Configure timeout and retries
+        TASK_TIMEOUT = getattr(self.args, "task_timeout", 900) # 15 minutes default
+        MAX_RETRIES = 5 # Maximum number of retries per task
 
         while len(pending_tasks) > 0 or len(busy_actors) > 0 or len(restarting_actors) > 0:
             current_time = time.time()
@@ -330,19 +332,47 @@ class HPOPlacer(BasicPlacer):
             
             for f in timed_out_futures:
                 actor_idx, task_idx, _ = busy_actors.pop(f)
-                logging.warning(f"Actor {actor_idx} timed out processing task {task_idx} (> {TASK_TIMEOUT}s). Killing and retrying...")
                 
-                # Kill and recreate actor
-                ray.kill(self.actors[actor_idx])
-                new_actor = self._create_actor()
-                self.actors[actor_idx] = new_actor
-                
-                # Ping to wait for initialization
-                ping_future = new_actor.evaluate_macro_pos.remote({})
-                restarting_actors[ping_future] = actor_idx
-                
-                # Requeue task
-                pending_tasks.insert(0, tasks[task_idx])
+                # Check retry count
+                if tasks[task_idx].get("retry_count", 0) >= MAX_RETRIES:
+                    logging.error(f"Task {task_idx} failed/timed out {MAX_RETRIES} times. Skipping task.")
+                    # Mark as failed (results[task_idx] remains None or set to empty dict to trigger INF)
+                    results[task_idx] = {} 
+                    
+                    # Kill the actor as it's stuck
+                    logging.warning(f"Killing stuck actor {actor_idx}...")
+                    ray.kill(self.actors[actor_idx])
+                    # Wait for resources to be released
+                    time.sleep(3) 
+
+                    # Recreate actor for future use
+                    new_actor = self._create_actor()
+                    self.actors[actor_idx] = new_actor
+                    
+                    # Ping to wait for initialization
+                    ping_future = new_actor.evaluate_macro_pos.remote({})
+                    restarting_actors[ping_future] = actor_idx
+                    
+                else:
+                    logging.warning(f"Actor {actor_idx} timed out processing task {task_idx} (> {TASK_TIMEOUT}s). Killing and retrying (Attempt {tasks[task_idx].get('retry_count', 0) + 1}/{MAX_RETRIES})...")
+                    
+                    # Update retry count
+                    tasks[task_idx]["retry_count"] = tasks[task_idx].get("retry_count", 0) + 1
+                    
+                    # Kill and recreate actor
+                    ray.kill(self.actors[actor_idx])
+                    # Wait for resources to be released
+                    time.sleep(3) 
+
+                    new_actor = self._create_actor()
+                    self.actors[actor_idx] = new_actor
+                    
+                    # Ping to wait for initialization
+                    ping_future = new_actor.evaluate_macro_pos.remote({})
+                    restarting_actors[ping_future] = actor_idx
+                    
+                    # Requeue task
+                    pending_tasks.insert(0, tasks[task_idx])
 
             # 1. Check for completed restarts
             if restarting_actors:
@@ -355,6 +385,7 @@ class HPOPlacer(BasicPlacer):
                     except Exception as e:
                         print(f"Actor {actor_idx} restart failed: {e}. Retrying...")
                         ray.kill(self.actors[actor_idx])
+                        time.sleep(3) # Wait before retry
                         new_actor = self._create_actor()
                         self.actors[actor_idx] = new_actor
                         ping_future = new_actor.evaluate_macro_pos.remote({}) # Ping
@@ -363,6 +394,8 @@ class HPOPlacer(BasicPlacer):
             # 2. Assign tasks to idle actors
             while pending_tasks and idle_actors:
                 task = pending_tasks.pop(0)
+                # Check for cancelled tasks (if any mechanism existed, but here we handled it in timeout block)
+                
                 actor_idx = idle_actors.pop(0)
                 actor = self.actors[actor_idx]
                 
@@ -399,19 +432,36 @@ class HPOPlacer(BasicPlacer):
                         # HPO Placer only needs restart on crash, not on dirty state
                         idle_actors.append(actor_idx)
                     except Exception as e:
-                        logging.warning(f"Actor {actor_idx} failed processing task {task_idx}: {e}. Retrying...")
-                        
-                        # Kill and recreate actor
-                        ray.kill(self.actors[actor_idx])
-                        new_actor = self._create_actor()
-                        self.actors[actor_idx] = new_actor
-                        
-                        # Ping to wait for initialization
-                        ping_future = new_actor.evaluate_macro_pos.remote({})
-                        restarting_actors[ping_future] = actor_idx
-                        
-                        # Requeue task
-                        pending_tasks.insert(0, tasks[task_idx])
+                        if tasks[task_idx].get("retry_count", 0) >= MAX_RETRIES:
+                             logging.error(f"Task {task_idx} failed with error {MAX_RETRIES} times: {e}. Skipping.")
+                             results[task_idx] = {}
+                             
+                             # Kill and recreate actor (it might be in bad state)
+                             ray.kill(self.actors[actor_idx])
+                             time.sleep(3)
+                             new_actor = self._create_actor()
+                             self.actors[actor_idx] = new_actor
+                             
+                             ping_future = new_actor.evaluate_macro_pos.remote({})
+                             restarting_actors[ping_future] = actor_idx
+                        else:
+                            logging.warning(f"Actor {actor_idx} failed processing task {task_idx}: {e}. Retrying (Attempt {tasks[task_idx].get('retry_count', 0) + 1}/{MAX_RETRIES})...")
+                            
+                            tasks[task_idx]["retry_count"] = tasks[task_idx].get("retry_count", 0) + 1
+
+                            # Kill and recreate actor
+                            ray.kill(self.actors[actor_idx])
+                            time.sleep(3)
+                            
+                            new_actor = self._create_actor()
+                            self.actors[actor_idx] = new_actor
+                            
+                            # Ping to wait for initialization
+                            ping_future = new_actor.evaluate_macro_pos.remote({})
+                            restarting_actors[ping_future] = actor_idx
+                            
+                            # Requeue task
+                            pending_tasks.insert(0, tasks[task_idx])
                     
                 elif f in restarting_actors:
                     if f in restarting_actors: 
@@ -422,6 +472,7 @@ class HPOPlacer(BasicPlacer):
                         except Exception as e:
                             print(f"Actor {actor_idx} restart failed: {e}. Retrying...")
                             ray.kill(self.actors[actor_idx])
+                            time.sleep(3)
                             new_actor = self._create_actor()
                             self.actors[actor_idx] = new_actor
                             ping_future = new_actor.evaluate_macro_pos.remote({})
