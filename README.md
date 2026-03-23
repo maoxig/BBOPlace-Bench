@@ -15,12 +15,26 @@ Please first install docker and [docker cuda toolkit](https://docs.nvidia.com/da
 docker pull duketomlist/bboplace-bench:2.1.0
 ```
 Please compile `thirdparty/DREAMPlace_source` in the docker container following the below commands:
+<!-- -DENABLE_RMST_WL=ON \ -->
 ```bash
 cd thirdparty/DREAMPlace_source
+sed -i '4008s/SIGSTKSZ/32768/' thirdparty/OpenTimer/unittest/doctest.h
+sed -i '4056s/\[\]/[4 * 32768]/' thirdparty/OpenTimer/unittest/doctest.h
+
 mkdir build
 cd build
-cmake .. 
-make
+cmake .. \
+-DCMAKE_INSTALL_PREFIX=../install \
+-DCMAKE_BUILD_TYPE=Release \
+-DCMAKE_C_COMPILER=gcc-7 \
+-DCMAKE_CXX_COMPILER=g++-7 \
+-DPython_EXECUTABLE=/opt/conda/envs/py39/bin/python \
+-DTORCH_INSTALL_PREFIX=/opt/conda/envs/py39/lib/python3.9/site-packages/torch \
+-DTORCH_VERSION=2.0.1 \
+-DTORCH_ENABLE_CUDA=ON \
+-DTORCH_PYTHON_LIBRARY=/opt/conda/envs/py39/lib/python3.9/site-packages/torch/lib/libtorch_python.so
+
+make -j$(nproc)
 make install
 cd ../..
 cp -r DREAMPlace_source/install/dreamplace dreamplace
