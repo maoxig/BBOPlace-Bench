@@ -1,7 +1,8 @@
 docker run -it \
-  --name mo-bbo \
+  --name mo-bbo-ppa \
   --gpus all \
   --rm \
+  --shm-size=32g \
   --network host \
   -u $(id -u):$(id -g) \
   -v /etc/passwd:/etc/passwd:ro \
