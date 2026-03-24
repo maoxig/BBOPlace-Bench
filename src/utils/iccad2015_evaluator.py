@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import logging
 import time
+import torch as th
 
 def get_project_root():
     """
@@ -17,6 +18,7 @@ def setup_dreamplace_env(root_dir):
     """
     Add DREAMPlace and thirdparty paths to sys.path
     """
+    sys.path.append(root_dir)
     sys.path.append(os.path.join(root_dir, "thirdparty"))
     sys.path.append(os.path.join(root_dir, "thirdparty", "dreamplace"))
     
@@ -103,6 +105,7 @@ def evaluate_iccad2015_timing(def_path, benchmark_name, root_dir=None, verbose=F
         from thirdparty.dreamplace.Params import Params as DMPParams
         from thirdparty.dreamplace.PlaceDB import PlaceDB as DMPPlaceDB
         import thirdparty.dreamplace.Timer as Timer
+        from thirdparty.dreamplace.NonLinearPlace import NonLinearPlace
     except ImportError as e:
         print(f"Error importing DREAMPlace: {e}")
         return None
@@ -151,34 +154,46 @@ def evaluate_iccad2015_timing(def_path, benchmark_name, root_dir=None, verbose=F
                 "late_lib_input": suffix2path("_Late.lib"),
                 "sdc_input": suffix2path(".sdc"),
                 "plot_flag": 0,
+                "random_center_init_flag": 0,
                 # "gpu": 0 # Let config decide, or force CPU if needed.
             })
             
-            # Initialize PlaceDB
-            # This reads the DEF, LEF, Verilog, etc.
+            # Initialize PlaceDB (follow dmp_actor "def" path behavior)
             placedb = DMPPlaceDB()
+
+                # Fallback for environments where read() is unavailable.
             placedb(params)
             
             # Initialize Timer
             # Timer usually runs on CPU (OpenTimer)
             timer = Timer.Timer()
             timer(params, placedb)
-            
-            # Update Timing (Run Static Timing Analysis)
             timer.update_timing()
+
+            # IMPORTANT:
+            # Use timing_op(pos) path when available. This is the same pattern as dmp_actor
+            # and is sensitive to placement coordinates from the DEF.
+            tns_raw = None
+            wns_raw = None
+            time_unit = None
+
+            placer = NonLinearPlace(params, placedb, timer=timer)
+            # Keep consistent with dmp_actor._update_dmp_placer.
+
+            timing_op = getattr(placer.op_collections, "timing_op", None)
+            if timing_op is not None:
+                time_unit = timing_op.timer.time_unit()
+                if time_unit == 0:
+                    time_unit = 1e-12
+
+                timing_op(placer.pos[0].data.cpu())
+                timing_op.timer.update_timing()
+
+                tns_raw = timing_op.timer.report_tns_elw(split=1)
+                wns_raw = timing_op.timer.report_wns(split=1)
+
+
             
-            # Extract Metrics
-            time_unit = timer.time_unit()
-            if time_unit == 0:
-                time_unit = 1e-12 
-            
-            tns_raw = timer.report_tns_elw(split=1)
-            wns_raw = timer.report_wns(split=1)
-            
-            # Normalization logic from dmp_actor.py:
-            # tns = timing_op.timer.report_tns_elw(split=1) / (time_unit * 1e17)
-            # wns = timing_op.timer.report_wns(split=1) / (time_unit * 1e15)
-            # result = { "n_tns": -float(tns), "n_wns": -float(wns) }
             
             n_tns_val = tns_raw / (time_unit * 1e17)
             n_wns_val = wns_raw / (time_unit * 1e15)

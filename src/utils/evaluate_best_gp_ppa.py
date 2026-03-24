@@ -5,10 +5,33 @@ import re
 import subprocess
 import time
 import sys
+import re
+import subprocess
+import time
+import sys
 from datetime import datetime
 sys.path.append(os.path.abspath("."))
 sys.path.append(os.path.abspath("./src"))
+sys.path.append(os.path.abspath("."))
+sys.path.append(os.path.abspath("./src"))
 import pandas as pd
+from config.benchmark import (
+    ROOT_DIR, BENCHMARK_DIR,
+)
+THIRDPARTY_DIR = os.path.join(ROOT_DIR, "thirdparty")
+DREAMPLACE_DIR = os.path.join(THIRDPARTY_DIR, "dreamplace")
+SOURCE_DIR = os.path.join(ROOT_DIR, "src")
+import sys
+sys.path.extend(
+    [
+        ROOT_DIR, 
+        BENCHMARK_DIR, 
+        THIRDPARTY_DIR, 
+        DREAMPLACE_DIR, 
+        SOURCE_DIR
+    ]
+)
+os.environ["PYTHONPATH"] = ":".join(sys.path)
 from config.benchmark import (
     ROOT_DIR, BENCHMARK_DIR,
 )
@@ -37,6 +60,39 @@ BENCHMARKS = {
 
 FORMULATIONS = ["MGO", "HPO"]
 N_DEF_TOP = 5
+
+
+def parse_csv_or_all(value, valid_values=None):
+    if value is None:
+        return None
+
+    raw = value.strip()
+    if raw.lower() == "all" or raw == "":
+        return None
+
+    items = [x.strip() for x in raw.split(",") if x.strip()]
+    if valid_values is not None:
+        valid_lower = {x.lower(): x for x in valid_values}
+        normalized = []
+        for item in items:
+            key = item.lower()
+            if key not in valid_lower:
+                raise ValueError(f"Unsupported value '{item}', valid options: {sorted(valid_values)}")
+            normalized.append(valid_lower[key])
+        return normalized
+
+    return items
+
+
+def load_hv_summary(summary_json, seed):
+    with open(summary_json, "r") as f:
+        data = json.load(f)
+
+    seed_in_json = data.get("seed")
+    if seed_in_json is not None and int(seed_in_json) != int(seed):
+        print(f"[WARN] hv json seed={seed_in_json}, requested seed={seed}. Continue anyway.")
+
+    return data
 
 
 def parse_csv_or_all(value, valid_values=None):
@@ -102,20 +158,21 @@ def parse_iccad_output(stdout, report_path):
                     k, v = line.split(":", 1)
                     key = k.strip()
                     value = v.strip()
-                    if key in {"TNS", "WNS", "n_tns", "n_wns", "Time Unit", "Runtime"}:
+                    if key in {"n_tns", "n_wns", "Runtime", "runtime"}:
                         try:
-                            metrics[key] = float(value.split()[0])
+                            if key.lower() == "runtime":
+                                metrics["runtime_sec"] = float(value.split()[0])
+                            else:
+                                metrics[key] = float(value.split()[0])
                         except ValueError:
                             pass
         except Exception:
             pass
 
     patterns = {
-        "tns": r"TNS \(raw\):\s*([-+eE0-9\.]+)",
-        "wns": r"WNS \(raw\):\s*([-+eE0-9\.]+)",
         "n_tns": r"n_tns \(score\):\s*([-+eE0-9\.]+)",
         "n_wns": r"n_wns \(score\):\s*([-+eE0-9\.]+)",
-        "runtime": r"Runtime:\s*([-+eE0-9\.]+)",
+        "runtime_sec": r"Runtime:\s*([-+eE0-9\.]+)",
     }
 
     for key, pattern in patterns.items():
@@ -125,16 +182,6 @@ def parse_iccad_output(stdout, report_path):
                 metrics[key] = float(m.group(1))
             except ValueError:
                 pass
-
-    # Normalize keys for consistency in final output.
-    if "TNS" in metrics and "tns" not in metrics:
-        metrics["tns"] = metrics["TNS"]
-    if "WNS" in metrics and "wns" not in metrics:
-        metrics["wns"] = metrics["WNS"]
-    if "Runtime" in metrics and "runtime" not in metrics:
-        metrics["runtime"] = metrics["Runtime"]
-    if "Time Unit" in metrics and "time_unit" not in metrics:
-        metrics["time_unit"] = metrics["Time Unit"]
 
     return metrics if metrics else None
 
@@ -194,10 +241,70 @@ def evaluate_one_def_subprocess(benchmark, case_name, def_path, workspace_root, 
             workspace_root,
         ]
         report_path = f"{def_path}.timing.txt"
+        cmd = [
+            "python",
+            os.path.join(workspace_root, "src", "utils", "iccad2015_evaluator.py"),
+            "--def_path",
+            def_path,
+            "--benchmark",
+            case_name,
+            "--root_dir",
+            workspace_root,
+        ]
+        report_path = f"{def_path}.timing.txt"
 
+    elif benchmark == "OpenROAD":
     elif benchmark == "OpenROAD":
         work_dir = os.path.join(eval_base_dir, os.path.basename(def_path).replace(".def", ""))
         os.makedirs(work_dir, exist_ok=True)
+        cmd = [
+            "python",
+            os.path.join(workspace_root, "src", "utils", "openroad_evaluator.py"),
+            "--def_path",
+            def_path,
+            "--design",
+            case_name,
+            "--platform",
+            platform,
+            "--variant",
+            variant,
+            "--work_dir",
+            work_dir,
+        ]
+    else:
+        return None, "unsupported benchmark", -1, 0.0
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=workspace_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout_sec,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "timeout", -9, time.time() - start
+
+    duration = time.time() - start
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+
+    if benchmark == "ICCAD2015":
+        metrics = parse_iccad_output(stdout, report_path)
+    else:
+        metrics = parse_openroad_output(stdout, work_dir)
+
+    err_text = ""
+    if proc.returncode != 0:
+        err_text = (stderr.strip() or stdout.strip())[-800:]
+
+    return metrics, err_text, proc.returncode, duration
+
+
+def build_task_plan(hv_summary, selected_benchmarks, selected_cases, selected_formulations):
+    tasks = []
         cmd = [
             "python",
             os.path.join(workspace_root, "src", "utils", "openroad_evaluator.py"),
@@ -251,6 +358,9 @@ def build_task_plan(hv_summary, selected_benchmarks, selected_cases, selected_fo
         if selected_benchmarks is not None and benchmark not in selected_benchmarks:
             continue
 
+        if selected_benchmarks is not None and benchmark not in selected_benchmarks:
+            continue
+
         bench_data = hv_summary.get("benchmarks", {}).get(benchmark, {})
         gp_data = bench_data.get("modes", {}).get("GP", {})
         gp_cases = gp_data.get("cases", {})
@@ -259,8 +369,14 @@ def build_task_plan(hv_summary, selected_benchmarks, selected_cases, selected_fo
             if selected_cases is not None and case_name not in selected_cases:
                 continue
 
+            if selected_cases is not None and case_name not in selected_cases:
+                continue
+
             case_data = gp_cases.get(case_name, {})
             for form in FORMULATIONS:
+                if selected_formulations is not None and form not in selected_formulations:
+                    continue
+
                 if selected_formulations is not None and form not in selected_formulations:
                     continue
 
@@ -431,11 +547,187 @@ def main():
                 "error": err_text,
             }
         )
+                    tasks.append(
+                        {
+                            "benchmark": benchmark,
+                            "case": case_name,
+                            "formulation": form,
+                            "mode": "GP",
+                            "best_algo": best_algo,
+                            "best_hv": best_hv,
+                            "run_path": best_run_path,
+                            "def_rank": rank,
+                            "def_path": def_path,
+                            "used_gp_def": used_gp,
+                        }
+                    )
 
+    return tasks
+
+
+def print_plan(tasks, preview_limit, estimate_per_def_min):
+    print("\n=== Evaluation Plan ===")
+    print(f"Total DEF tasks: {len(tasks)}")
+
+    combo_set = set()
+    for t in tasks:
+        combo_set.add((t["benchmark"], t["case"], t["formulation"], t["best_algo"]))
+    print(f"Total benchmark/case/formulation combos: {len(combo_set)}")
+
+    if estimate_per_def_min is not None and len(tasks) > 0:
+        est_total_min = estimate_per_def_min * len(tasks)
+        print(f"Estimated total time: {est_total_min:.1f} min (per DEF ~ {estimate_per_def_min:.2f} min)")
+
+    print("\nPreview:")
+    for idx, t in enumerate(tasks[:preview_limit], 1):
+        gp_flag = "gp" if t["used_gp_def"] else "base"
+        print(
+            f"  [{idx}] {t['benchmark']}/{t['case']}/{t['formulation']} "
+            f"best={t['best_algo']} hv={t['best_hv']} def#{t['def_rank']}({gp_flag})"
+        )
+
+    if len(tasks) > preview_limit:
+        print(f"  ... {len(tasks) - preview_limit} more tasks")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Evaluate GP PPA for best-HV algorithm per case/formulation (subprocess mode)"
+    )
+    parser.add_argument("--workspace", type=str, default=".", help="Workspace root")
+    parser.add_argument("--output", type=str, default="analysis_reports", help="Output directory")
+    parser.add_argument("--seed", type=int, required=True, help="Seed to evaluate")
+    parser.add_argument("--hv_json", type=str, default=None, help="Path to hv_summary_seed_<seed>.json")
+    parser.add_argument("--platform", type=str, default="nangate45", help="OpenROAD platform")
+    parser.add_argument("--variant", type=str, default="eval_xp", help="OpenROAD flow variant")
+
+    parser.add_argument("--benchmarks", type=str, default="all", help="all or comma list: ICCAD2015,OpenROAD")
+    parser.add_argument("--cases", type=str, default="all", help="all or comma list")
+    parser.add_argument("--formulations", type=str, default="all", help="all or comma list: MGO,HPO")
+
+    parser.add_argument("--preview_limit", type=int, default=30, help="How many planned tasks to print")
+    parser.add_argument("--estimate_per_def_min", type=float, default=None, help="Optional ETA estimate per DEF")
+    parser.add_argument("--dry_run", action="store_true", help="Only print/save plan, do not execute evaluation")
+    parser.add_argument("--confirm", action="store_true", help="Ask confirmation before execution")
+    parser.add_argument("--timeout_sec", type=int, default=0, help="Timeout per DEF subprocess (0 for no timeout)")
+    args = parser.parse_args()
+
+    workspace_root = os.path.abspath(args.workspace)
+    output_dir = os.path.abspath(args.output)
+    os.makedirs(output_dir, exist_ok=True)
+
+    hv_json = os.path.abspath(args.hv_json) if args.hv_json else os.path.join(output_dir, f"hv_summary_seed_{args.seed}.json")
+    if not os.path.exists(hv_json):
+        raise FileNotFoundError(f"HV summary json not found: {hv_json}")
+
+    selected_benchmarks = parse_csv_or_all(args.benchmarks, valid_values=list(BENCHMARKS.keys()))
+    all_cases = []
+    for cfg in BENCHMARKS.values():
+        all_cases.extend(cfg["cases"])
+    selected_cases = parse_csv_or_all(args.cases, valid_values=all_cases)
+    selected_formulations = parse_csv_or_all(args.formulations, valid_values=FORMULATIONS)
+
+    hv_summary = load_hv_summary(hv_json, args.seed)
+    tasks = build_task_plan(hv_summary, selected_benchmarks, selected_cases, selected_formulations)
+
+    plan_out = os.path.join(output_dir, f"ppa_eval_seed_{args.seed}_gp_best_plan.json")
+    with open(plan_out, "w") as f:
+        json.dump(
+            {
+                "seed": int(args.seed),
+                "generated_at": datetime.now().isoformat(),
+                "hv_json": hv_json,
+                "platform": args.platform,
+                "variant": args.variant,
+                "benchmarks_filter": args.benchmarks,
+                "cases_filter": args.cases,
+                "formulations_filter": args.formulations,
+                "n_tasks": len(tasks),
+                "tasks": tasks,
+            },
+            f,
+            indent=2,
+        )
+
+    print_plan(tasks, args.preview_limit, args.estimate_per_def_min)
+    print(f"Plan saved to: {plan_out}")
+
+    if args.dry_run:
+        print("[INFO] dry-run mode, evaluation skipped")
+        return
+
+    if args.confirm:
+        answer = input("\nProceed with evaluation? [y/N]: ").strip().lower()
+        if answer not in {"y", "yes"}:
+            print("[INFO] aborted by user")
+            return
+
+    if len(tasks) == 0:
+        print("[INFO] no task selected")
+        return
+
+    timeout_sec = None if args.timeout_sec <= 0 else args.timeout_sec
+
+    result_rows = []
+    run_start = time.time()
+
+    for idx, task in enumerate(tasks, 1):
+        eval_base_dir = os.path.join(task["run_path"], "ppa_eval")
+        os.makedirs(eval_base_dir, exist_ok=True)
+
+        print(
+            f"\n[RUN {idx}/{len(tasks)}] {task['benchmark']}/{task['case']}/{task['formulation']} "
+            f"algo={task['best_algo']} def#{task['def_rank']}"
+        )
+
+        metrics, err_text, return_code, duration = evaluate_one_def_subprocess(
+            benchmark=task["benchmark"],
+            case_name=task["case"],
+            def_path=task["def_path"],
+            workspace_root=workspace_root,
+            platform=args.platform,
+            variant=args.variant,
+            eval_base_dir=eval_base_dir,
+            timeout_sec=timeout_sec,
+        )
+
+        row = dict(task)
+        row.update(
+            {
+                "seed": int(args.seed),
+                "eval_ok": metrics is not None and return_code == 0,
+                "return_code": return_code,
+                "duration_sec": duration,
+                "error": err_text,
+            }
+        )
+
+        if metrics:
+            row.update(metrics)
         if metrics:
             row.update(metrics)
 
         result_rows.append(row)
+        result_rows.append(row)
+
+        # Print per-DEF result immediately for live monitoring.
+        if row.get("eval_ok"):
+            if task["benchmark"] == "ICCAD2015":
+                print(
+                    "[RESULT] "
+                    f"n_tns={row.get('n_tns')} "
+                    f"n_wns={row.get('n_wns')} "
+                    f"runtime_sec={row.get('runtime_sec', row.get('duration_sec')):.2f}"
+                )
+            else:
+                print(
+                    "[RESULT] "
+                    f"WNS={row.get('WNS')} TNS={row.get('TNS')} "
+                    f"GRT_WL={row.get('GRT_WL')} DRT_WL={row.get('DRT_WL')} "
+                    f"runtime_sec={row.get('runtime', row.get('duration_sec')):.2f}"
+                )
+        else:
+            print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
 
         elapsed = time.time() - run_start
         avg = elapsed / idx
@@ -461,7 +753,10 @@ def main():
 
     ok_count = sum(1 for r in result_rows if r.get("eval_ok"))
     print(f"\nSaved PPA JSON: {json_out}")
+    ok_count = sum(1 for r in result_rows if r.get("eval_ok"))
+    print(f"\nSaved PPA JSON: {json_out}")
     print(f"Saved PPA CSV : {csv_out}")
+    print(f"Summary       : ok={ok_count}/{len(result_rows)}")
     print(f"Summary       : ok={ok_count}/{len(result_rows)}")
 
 
