@@ -3,64 +3,44 @@ import json
 import os
 import re
 import subprocess
-import time
 import sys
-import re
-import subprocess
 import time
-import sys
 from datetime import datetime
-sys.path.append(os.path.abspath("."))
-sys.path.append(os.path.abspath("./src"))
-sys.path.append(os.path.abspath("."))
-sys.path.append(os.path.abspath("./src"))
+
 import pandas as pd
-from config.benchmark import (
-    ROOT_DIR, BENCHMARK_DIR,
-)
+
+sys.path.append(os.path.abspath("."))
+sys.path.append(os.path.abspath("./src"))
+
+from config.benchmark import ROOT_DIR, BENCHMARK_DIR
+
 THIRDPARTY_DIR = os.path.join(ROOT_DIR, "thirdparty")
 DREAMPLACE_DIR = os.path.join(THIRDPARTY_DIR, "dreamplace")
 SOURCE_DIR = os.path.join(ROOT_DIR, "src")
-import sys
-sys.path.extend(
-    [
-        ROOT_DIR, 
-        BENCHMARK_DIR, 
-        THIRDPARTY_DIR, 
-        DREAMPLACE_DIR, 
-        SOURCE_DIR
-    ]
-)
+
+sys.path.extend([ROOT_DIR, BENCHMARK_DIR, THIRDPARTY_DIR, DREAMPLACE_DIR, SOURCE_DIR])
 os.environ["PYTHONPATH"] = ":".join(sys.path)
-from config.benchmark import (
-    ROOT_DIR, BENCHMARK_DIR,
-)
-THIRDPARTY_DIR = os.path.join(ROOT_DIR, "thirdparty")
-DREAMPLACE_DIR = os.path.join(THIRDPARTY_DIR, "dreamplace")
-SOURCE_DIR = os.path.join(ROOT_DIR, "src")
-import sys
-sys.path.extend(
-    [
-        ROOT_DIR, 
-        BENCHMARK_DIR, 
-        THIRDPARTY_DIR, 
-        DREAMPLACE_DIR, 
-        SOURCE_DIR
-    ]
-)
-os.environ["PYTHONPATH"] = ":".join(sys.path)
+
 BENCHMARKS = {
     "OpenROAD": {
         "cases": ["ariane133", "ariane136", "bp", "bp_be", "bp_fe", "swerv_wrapper"],
     },
     "ICCAD2015": {
-        "cases": ["superblue1", "superblue3", "superblue4", "superblue5", "superblue7", "superblue10", "superblue16", "superblue18"],
+        "cases": [
+            "superblue1",
+            "superblue3",
+            "superblue4",
+            "superblue5",
+            "superblue7",
+            "superblue10",
+            "superblue16",
+            "superblue18",
+        ],
     },
 }
 
 FORMULATIONS = ["MGO", "HPO"]
 N_DEF_TOP = 5
-
 
 
 def parse_csv_or_all(value, valid_values=None):
@@ -142,7 +122,6 @@ def parse_iccad_output(stdout, report_path):
         "n_wns": r"n_wns \(score\):\s*([-+eE0-9\.]+)",
         "runtime_sec": r"Runtime:\s*([-+eE0-9\.]+)",
     }
-
     for key, pattern in patterns.items():
         m = re.search(pattern, stdout)
         if m:
@@ -182,7 +161,6 @@ def parse_openroad_output(stdout, work_dir):
         "Power": r"Power:\s*([-+eE0-9\.]+)",
         "runtime": r"runtime:\s*([-+eE0-9\.]+)",
     }
-
     for key, pattern in patterns.items():
         m = re.search(pattern, stdout)
         if m and key not in metrics:
@@ -194,7 +172,16 @@ def parse_openroad_output(stdout, work_dir):
     return metrics if metrics else None
 
 
-def evaluate_one_def_subprocess(benchmark, case_name, def_path, workspace_root, platform, variant, eval_base_dir, timeout_sec):
+def evaluate_one_def_subprocess(
+    benchmark,
+    case_name,
+    def_path,
+    workspace_root,
+    platform,
+    variant,
+    eval_base_dir,
+    timeout_sec,
+):
     start = time.time()
 
     if benchmark == "ICCAD2015":
@@ -209,19 +196,6 @@ def evaluate_one_def_subprocess(benchmark, case_name, def_path, workspace_root, 
             workspace_root,
         ]
         report_path = f"{def_path}.timing.txt"
-        cmd = [
-            "python",
-            os.path.join(workspace_root, "src", "utils", "iccad2015_evaluator.py"),
-            "--def_path",
-            def_path,
-            "--benchmark",
-            case_name,
-            "--root_dir",
-            workspace_root,
-        ]
-        report_path = f"{def_path}.timing.txt"
-
-
     elif benchmark == "OpenROAD":
         work_dir = os.path.join(eval_base_dir, os.path.basename(def_path).replace(".def", ""))
         os.makedirs(work_dir, exist_ok=True)
@@ -271,33 +245,51 @@ def evaluate_one_def_subprocess(benchmark, case_name, def_path, workspace_root, 
     return metrics, err_text, proc.returncode, duration
 
 
+def parse_case_filters(args):
+    all_cases = BENCHMARKS["ICCAD2015"]["cases"] + BENCHMARKS["OpenROAD"]["cases"]
+    common_cases = parse_csv_or_all(args.cases, valid_values=all_cases)
+    iccad_cases = parse_csv_or_all(args.iccad_cases, valid_values=BENCHMARKS["ICCAD2015"]["cases"])
+    openroad_cases = parse_csv_or_all(args.openroad_cases, valid_values=BENCHMARKS["OpenROAD"]["cases"])
 
-def build_task_plan(hv_summary, selected_benchmarks, selected_cases, selected_formulations):
+    case_filters = {
+        "ICCAD2015": iccad_cases,
+        "OpenROAD": openroad_cases,
+    }
+
+    # --cases acts as a global additional filter.
+    if common_cases is not None:
+        common_set = set(common_cases)
+        for bench in BENCHMARKS:
+            bench_cases = set(BENCHMARKS[bench]["cases"])
+            bench_common = bench_cases.intersection(common_set)
+
+            if case_filters[bench] is None:
+                case_filters[bench] = sorted(bench_common)
+            else:
+                current_cases = case_filters[bench] or []
+                case_filters[bench] = sorted(set(current_cases).intersection(bench_common))
+
+    return common_cases, case_filters
+
+
+def build_task_plan(hv_summary, selected_benchmarks, selected_formulations, benchmark_case_filters):
     tasks = []
 
     for benchmark, bench_cfg in BENCHMARKS.items():
         if selected_benchmarks is not None and benchmark not in selected_benchmarks:
             continue
 
-        if selected_benchmarks is not None and benchmark not in selected_benchmarks:
-            continue
-
         bench_data = hv_summary.get("benchmarks", {}).get(benchmark, {})
         gp_data = bench_data.get("modes", {}).get("GP", {})
         gp_cases = gp_data.get("cases", {})
+        case_filter = benchmark_case_filters.get(benchmark)
 
         for case_name in bench_cfg["cases"]:
-            if selected_cases is not None and case_name not in selected_cases:
-                continue
-
-            if selected_cases is not None and case_name not in selected_cases:
+            if case_filter is not None and case_name not in case_filter:
                 continue
 
             case_data = gp_cases.get(case_name, {})
             for form in FORMULATIONS:
-                if selected_formulations is not None and form not in selected_formulations:
-                    continue
-
                 if selected_formulations is not None and form not in selected_formulations:
                     continue
 
@@ -332,15 +324,11 @@ def build_task_plan(hv_summary, selected_benchmarks, selected_cases, selected_fo
     return tasks
 
 
-
-
 def print_plan(tasks, preview_limit, estimate_per_def_min):
     print("\n=== Evaluation Plan ===")
     print(f"Total DEF tasks: {len(tasks)}")
 
-    combo_set = set()
-    for t in tasks:
-        combo_set.add((t["benchmark"], t["case"], t["formulation"], t["best_algo"]))
+    combo_set = set((t["benchmark"], t["case"], t["formulation"], t["best_algo"]) for t in tasks)
     print(f"Total benchmark/case/formulation combos: {len(combo_set)}")
 
     if estimate_per_def_min is not None and len(tasks) > 0:
@@ -354,7 +342,6 @@ def print_plan(tasks, preview_limit, estimate_per_def_min):
             f"  [{idx}] {t['benchmark']}/{t['case']}/{t['formulation']} "
             f"best={t['best_algo']} hv={t['best_hv']} def#{t['def_rank']}({gp_flag})"
         )
-
     if len(tasks) > preview_limit:
         print(f"  ... {len(tasks) - preview_limit} more tasks")
 
@@ -371,7 +358,9 @@ def main():
     parser.add_argument("--variant", type=str, default="eval_xp", help="OpenROAD flow variant")
 
     parser.add_argument("--benchmarks", type=str, default="all", help="all or comma list: ICCAD2015,OpenROAD")
-    parser.add_argument("--cases", type=str, default="all", help="all or comma list")
+    parser.add_argument("--cases", type=str, default="all", help="Global case filter (all benchmarks)")
+    parser.add_argument("--iccad_cases", type=str, default="all", help="ICCAD2015-only cases, e.g. superblue1")
+    parser.add_argument("--openroad_cases", type=str, default="all", help="OpenROAD-only cases, e.g. bp,bp_fe")
     parser.add_argument("--formulations", type=str, default="all", help="all or comma list: MGO,HPO")
 
     parser.add_argument("--preview_limit", type=int, default=30, help="How many planned tasks to print")
@@ -390,14 +379,11 @@ def main():
         raise FileNotFoundError(f"HV summary json not found: {hv_json}")
 
     selected_benchmarks = parse_csv_or_all(args.benchmarks, valid_values=list(BENCHMARKS.keys()))
-    all_cases = []
-    for cfg in BENCHMARKS.values():
-        all_cases.extend(cfg["cases"])
-    selected_cases = parse_csv_or_all(args.cases, valid_values=all_cases)
     selected_formulations = parse_csv_or_all(args.formulations, valid_values=FORMULATIONS)
+    common_cases_filter, benchmark_case_filters = parse_case_filters(args)
 
     hv_summary = load_hv_summary(hv_json, args.seed)
-    tasks = build_task_plan(hv_summary, selected_benchmarks, selected_cases, selected_formulations)
+    tasks = build_task_plan(hv_summary, selected_benchmarks, selected_formulations, benchmark_case_filters)
 
     plan_out = os.path.join(output_dir, f"ppa_eval_seed_{args.seed}_gp_best_plan.json")
     with open(plan_out, "w") as f:
@@ -410,6 +396,13 @@ def main():
                 "variant": args.variant,
                 "benchmarks_filter": args.benchmarks,
                 "cases_filter": args.cases,
+                "iccad_cases_filter": args.iccad_cases,
+                "openroad_cases_filter": args.openroad_cases,
+                "effective_cases_filter": {
+                    "common": common_cases_filter,
+                    "ICCAD2015": benchmark_case_filters["ICCAD2015"],
+                    "OpenROAD": benchmark_case_filters["OpenROAD"],
+                },
                 "formulations_filter": args.formulations,
                 "n_tasks": len(tasks),
                 "tasks": tasks,
@@ -436,7 +429,6 @@ def main():
         return
 
     timeout_sec = None if args.timeout_sec <= 0 else args.timeout_sec
-
     result_rows = []
     run_start = time.time()
 
@@ -470,16 +462,11 @@ def main():
                 "error": err_text,
             }
         )
-
-        if metrics:
-            row.update(metrics)
         if metrics:
             row.update(metrics)
 
         result_rows.append(row)
-        result_rows.append(row)
 
-        # Print per-DEF result immediately for live monitoring.
         if row.get("eval_ok"):
             if task["benchmark"] == "ICCAD2015":
                 print(
@@ -522,10 +509,7 @@ def main():
 
     ok_count = sum(1 for r in result_rows if r.get("eval_ok"))
     print(f"\nSaved PPA JSON: {json_out}")
-    ok_count = sum(1 for r in result_rows if r.get("eval_ok"))
-    print(f"\nSaved PPA JSON: {json_out}")
     print(f"Saved PPA CSV : {csv_out}")
-    print(f"Summary       : ok={ok_count}/{len(result_rows)}")
     print(f"Summary       : ok={ok_count}/{len(result_rows)}")
 
 

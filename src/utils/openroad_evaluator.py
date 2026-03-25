@@ -3,7 +3,6 @@ import sys
 import argparse
 import subprocess
 import re
-import shutil
 import time
 
 def get_project_root():
@@ -17,7 +16,78 @@ def get_project_root():
 def get_orfs_root(root_dir):
     return os.path.join(root_dir, "thirdparty", "OpenROAD-flow-scripts")
 
-def parse_metrics_from_files(stdout_content, orfs_root, platform, design, variant):
+
+def parse_config_exports(config_path):
+    exports = {}
+    pattern = re.compile(r"^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$")
+    try:
+        with open(config_path, "r") as f:
+            for line in f:
+                m = pattern.match(line)
+                if m:
+                    exports[m.group(1)] = m.group(2).strip()
+    except Exception:
+        pass
+    return exports
+
+
+def discover_design_meta(orfs_root, platform):
+    """
+    Scan designs/<platform>/*/config_xp.mk and return metadata entries.
+    """
+    base = os.path.join(orfs_root, "designs", platform)
+    metas = []
+    if not os.path.isdir(base):
+        return metas
+
+    for d in os.listdir(base):
+        cfg = os.path.join(base, d, "config_xp.mk")
+        if not os.path.isfile(cfg):
+            continue
+        exports = parse_config_exports(cfg)
+        metas.append(
+            {
+                "dir_name": d,
+                "config_path": cfg,
+                "design_name": exports.get("DESIGN_NAME", d),
+                "design_nickname": exports.get("DESIGN_NICKNAME", d),
+            }
+        )
+    return metas
+
+
+def resolve_design(orfs_root, platform, design_input):
+    """
+    Resolve user-provided design alias (short/full/dir) to config directory and output directory name.
+    """
+    metas = discover_design_meta(orfs_root, platform)
+    if not metas:
+        return None
+
+    key = design_input.strip().lower()
+    matched = []
+    for m in metas:
+        candidates = {
+            m["dir_name"].lower(),
+            str(m.get("design_name", "")).lower(),
+            str(m.get("design_nickname", "")).lower(),
+        }
+        if key in candidates:
+            matched.append(m)
+
+    if len(matched) == 1:
+        return matched[0]
+    if len(matched) > 1:
+        # Prefer exact dir name match if ambiguous.
+        for m in matched:
+            if m["dir_name"].lower() == key:
+                return m
+        return matched[0]
+
+    return None
+
+
+def parse_metrics_from_files(stdout_content, orfs_root, platform, output_design, variant):
     """
     Parse the OpenROAD logs and reports to extract metrics.
     Prioritizes reading from generated report/log files. Fallbacks to stdout if needed.
@@ -28,10 +98,10 @@ def parse_metrics_from_files(stdout_content, orfs_root, platform, design, varian
         "WNS": None,
         "TNS": None,
         "Power": None
-    }
+    }  # type: dict[str, float | None]
     
-    report_dir = os.path.join(orfs_root, "reports", platform, design, variant)
-    log_dir = os.path.join(orfs_root, "logs", platform, design, variant)
+    report_dir = os.path.join(orfs_root, "reports", platform, output_design, variant)
+    log_dir = os.path.join(orfs_root, "logs", platform, output_design, variant)
     
     finish_rpt_path = os.path.join(report_dir, "6_finish.rpt")
     grt_log_path = os.path.join(log_dir, "5_1_grt.log")
@@ -125,7 +195,7 @@ def parse_metrics_from_files(stdout_content, orfs_root, platform, design, varian
 
     return metrics
 
-def run_evaluation(def_path, design, platform, variant, work_dir, root_dir):
+def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, resolve_only=False):
     start_time = time.time()
     orfs_root = get_orfs_root(root_dir)
     if not os.path.exists(orfs_root):
@@ -137,15 +207,33 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir):
         print(f"Error: DEF file not found: {abs_def_path}")
         return None
         
+    resolved = resolve_design(orfs_root, platform, design)
+    if resolved is None:
+        print(f"Error: cannot resolve design alias '{design}' under designs/{platform}")
+        return None
+
+    config_design = resolved["dir_name"]
+    output_design = resolved["design_nickname"]
+    design_name = resolved["design_name"]
+
     print(f"Evaluating {design} ({platform}) using Make flow...")
+    print(f"Resolved design: dir={config_design}, DESIGN_NAME={design_name}, DESIGN_NICKNAME={output_design}")
     print(f"DEF Path: {abs_def_path}")
     print(f"Variant: {variant}")
+
+    if resolve_only:
+        return {
+            "resolved": True,
+            "config_design": config_design,
+            "design_name": design_name,
+            "output_design": output_design,
+        }
 
     # Build Make Command for Macro Placement (run_mp)
     # This step converts the input DEF into a macro placement file (macro_out)
     # which is then consumed by the main flow.
     
-    config_file = f"designs/{platform}/{design}/config_xp.mk"
+    config_file = f"designs/{platform}/{config_design}/config_xp.mk"
     
     cmd_mp = [
         "make",
@@ -246,7 +334,7 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir):
                 return None
             
             # Use file-based parsing
-            metrics = parse_metrics_from_files(stdout_content, orfs_root, platform, design, variant)
+            metrics = parse_metrics_from_files(stdout_content, orfs_root, platform, output_design, variant)
             
             end_time = time.time()
             runtime = end_time - start_time
@@ -254,6 +342,8 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir):
             # Print metrics to stdout for caller
             if metrics:
                 metrics['runtime'] = runtime
+                metrics['resolved_design_dir'] = config_design
+                metrics['resolved_output_design'] = output_design
                 print("\n=== Evaluation Results ===")
                 for k, v in metrics.items():
                     print(f"{k}: {v}")
@@ -275,10 +365,11 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir):
 def main():
     parser = argparse.ArgumentParser(description="Evaluate OpenROAD Metrics for a DEF file using Make flow")
     parser.add_argument("--def_path", required=True, help="Path to the DEF file")
-    parser.add_argument("--design", required=True, help="Design Name (e.g. ariane133)")
+    parser.add_argument("--design", required=True, help="Design alias/name/dir (e.g. ariane133, bp, bp_be_top)")
     parser.add_argument("--platform", default="nangate45", help="Platform Name (e.g. nangate45)")
-    parser.add_argument("--variant", default="eval_xp", help="Flow Variant Name (default: eval_xp)")
+    parser.add_argument("--variant", default="xp", help="Flow Variant Name (default: xp)")
     parser.add_argument("--work_dir", default=None, help="Working Directory for logs/reports")
+    parser.add_argument("--resolve_only", action="store_true", help="Only resolve design mapping, do not run make")
     
     args = parser.parse_args()
     
@@ -295,7 +386,15 @@ def main():
     if not os.path.exists(work_dir):
         os.makedirs(work_dir)
         
-    run_evaluation(def_path, args.design, args.platform, args.variant, work_dir, root_dir)
+    run_evaluation(
+        def_path,
+        args.design,
+        args.platform,
+        args.variant,
+        work_dir,
+        root_dir,
+        resolve_only=args.resolve_only,
+    )
 
 if __name__ == "__main__":
     main()
