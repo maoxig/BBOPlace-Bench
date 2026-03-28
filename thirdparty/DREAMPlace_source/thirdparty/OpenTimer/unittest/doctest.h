@@ -4005,7 +4005,7 @@ namespace {
         static bool             isSet;
         static struct sigaction oldSigActions[DOCTEST_COUNTOF(signalDefs)];
         static stack_t          oldSigStack;
-        static char             altStackMem[4 * SIGSTKSZ];
+        static char             altStackMem[4 * 32768];
 
         static void handleSignal(int sig) {
             const char* name = "<unknown signal>";
@@ -4053,7 +4053,7 @@ namespace {
     bool             FatalConditionHandler::isSet                                      = false;
     struct sigaction FatalConditionHandler::oldSigActions[DOCTEST_COUNTOF(signalDefs)] = {};
     stack_t          FatalConditionHandler::oldSigStack                                = {};
-    char             FatalConditionHandler::altStackMem[]                              = {};
+    char             FatalConditionHandler::altStackMem[4 * 32768]                              = {};
 
 #endif // DOCTEST_PLATFORM_WINDOWS
 #endif // DOCTEST_CONFIG_POSIX_SIGNALS || DOCTEST_CONFIG_WINDOWS_SEH
