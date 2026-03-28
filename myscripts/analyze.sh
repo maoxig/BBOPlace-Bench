@@ -1,1 +1,0 @@
- python src/utils/analyze_results.py --result_path results/superblue1/ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2025-12-11_15-28-25 --obj_labels  hpwl regularity
