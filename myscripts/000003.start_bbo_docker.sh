@@ -13,5 +13,6 @@ docker run -it \
   -v $HOME:$HOME \
   -v $HOME/.bashrc:$HOME/.bashrc \
   -v $HOME/.profile:$HOME/.profile \
+  -v /nas1:/nas1 \
   crt/bboplace-bench:2.1.0 \
   /bin/bash
