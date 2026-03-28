@@ -30,6 +30,7 @@ DRY_RUN="${DRY_RUN:-0}"
 ATTACH="${ATTACH:-0}"
 ENABLE_DOCKER="${ENABLE_DOCKER:-0}"            # 1: run each task through docker wrapper
 DOCKER_WRAPPER_SCRIPT="${DOCKER_WRAPPER_SCRIPT:-moscripts/docker_run_wrapper.sh}"
+DOCKER_WORKSPACE_DIR="${DOCKER_WORKSPACE_DIR:-/workspace}" # container path for workspace root
 TMUX_REMAIN_ON_EXIT="${TMUX_REMAIN_ON_EXIT:-1}" # keep dead windows for debugging
 CONDA_ENV_NAME="${CONDA_ENV_NAME:-}"            # optional, e.g. base
 KEEP_SHELL_AFTER_EXIT="${KEEP_SHELL_AFTER_EXIT:-1}" # keep interactive shell after task exits
@@ -158,6 +159,9 @@ echo "[INFO] scripts dir   : ${TARGET_DIR}"
 echo "[INFO] round label   : ${ROUND_LABEL}"
 echo "[INFO] selected count: ${#selected[@]}"
 echo "[INFO] use docker    : ${ENABLE_DOCKER}"
+if [[ "${ENABLE_DOCKER}" == "1" ]]; then
+  echo "[INFO] docker ws dir : ${DOCKER_WORKSPACE_DIR}"
+fi
 echo "[INFO] remain-on-exit: ${TMUX_REMAIN_ON_EXIT}"
 echo "[INFO] keep-shell    : ${KEEP_SHELL_AFTER_EXIT}"
 echo "[INFO] confirm-run   : ${CONFIRM_BEFORE_RUN}"
