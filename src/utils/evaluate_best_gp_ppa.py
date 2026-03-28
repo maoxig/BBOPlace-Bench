@@ -355,7 +355,7 @@ def main():
     parser.add_argument("--seed", type=int, required=True, help="Seed to evaluate")
     parser.add_argument("--hv_json", type=str, default=None, help="Path to hv_summary_seed_<seed>.json")
     parser.add_argument("--platform", type=str, default="nangate45", help="OpenROAD platform")
-    parser.add_argument("--variant", type=str, default="eval_xp", help="OpenROAD flow variant")
+    parser.add_argument("--variant", type=str, default="xp", help="OpenROAD flow variant")
 
     parser.add_argument("--benchmarks", type=str, default="all", help="all or comma list: ICCAD2015,OpenROAD")
     parser.add_argument("--cases", type=str, default="all", help="Global case filter (all benchmarks)")

@@ -36,3 +36,5 @@ dataflow_graph
 run_log
 run_artifacts
 *.log
+
+results*
