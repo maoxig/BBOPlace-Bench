@@ -138,9 +138,16 @@ int timingCppLauncher(
   // a tedious segmentation fault.
   using Point2i = ::DreamPlace::Point<int>;
   dreamplacePrint(kINFO, "launch rc tree construction...\n");
-  flute::readLUT(
-      "thirdparty/flute/lut.ICCAD2015/POWV9.dat",
-      "thirdparty/flute/lut.ICCAD2015/POST9.dat");
+  const char* flute_lut_dir = std::getenv("DREAMPLACE_FLUTE_LUT_DIR");
+  if (flute_lut_dir) {
+      std::string powv_path = std::string(flute_lut_dir) + "/POWV9.dat";
+      std::string post_path = std::string(flute_lut_dir) + "/POST9.dat";
+      flute::readLUT(powv_path.c_str(), post_path.c_str());
+  } else {
+      flute::readLUT(
+          "thirdparty/flute/lut.ICCAD2015/POWV9.dat",
+          "thirdparty/flute/lut.ICCAD2015/POST9.dat");
+  }
   auto beg = std::chrono::steady_clock::now();
 
   // TODO: check the template argument, integers or not?
