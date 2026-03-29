@@ -1,6 +1,6 @@
 # PPA + Proxy Joint Analysis
 
-本文档说明如何基于已有的 PPA 评估结果（如 `analysis_reports/ppa_eval_seed_1_gp_best.csv`）与 HV 汇总（如 `analysis_reports/hv_summary_seed_1.json`）生成论文可用的图表与统计分析。
+本文档说明如何基于已有的 PPA 评估结果（如 `results/analysis_reports/ppa_eval/seed_1/ppa_eval_seed_1_gp_best.csv`）与 HV 汇总（如 `results/analysis_reports/hv/json/hv_summary_seed_1.json`）生成论文可用的图表与统计分析。
 
 ## 1. 分析目标
 
@@ -22,9 +22,9 @@
 
 ```bash
 python src/utils/analyze_ppa_proxy.py \
-  --ppa_csv analysis_reports/ppa_eval_seed_1_gp_best.csv \
-  --hv_json analysis_reports/hv_summary_seed_1.json \
-  --output_dir analysis_reports/ppa_proxy_study_seed_1 \
+  --ppa_csv results/analysis_reports/ppa_eval/seed_1/ppa_eval_seed_1_gp_best.csv \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seed_1.json \
+  --output_dir results/analysis_reports/ppa_proxy/study_seed_1 \
   --benchmarks OpenROAD \
   --formulations MGO,HPO \
   --only_eval_ok
@@ -34,9 +34,9 @@ python src/utils/analyze_ppa_proxy.py \
 
 ```bash
 python src/utils/analyze_ppa_proxy.py \
-  --ppa_csv analysis_reports/ppa_eval_seed_1_gp_best.csv \
-  --hv_json analysis_reports/hv_summary_seed_1.json \
-  --output_dir analysis_reports/ppa_proxy_study_quick \
+  --ppa_csv results/analysis_reports/ppa_eval/seed_1/ppa_eval_seed_1_gp_best.csv \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seed_1.json \
+  --output_dir results/analysis_reports/ppa_proxy/study_quick \
   --benchmarks OpenROAD \
   --cases ariane133,bp,bp_be \
   --formulations MGO,HPO \
@@ -49,9 +49,9 @@ OpenROAD：
 
 ```bash
 python src/utils/analyze_ppa_proxy.py \
-  --ppa_csv analysis_reports/ppa_eval_seed_1_gp_best.csv \
-  --hv_json analysis_reports/hv_summary_seed_1.json \
-  --output_dir analysis_reports/ppa_proxy_openroad \
+  --ppa_csv results/analysis_reports/ppa_eval/seed_1/ppa_eval_seed_1_gp_best.csv \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seed_1.json \
+  --output_dir results/analysis_reports/ppa_proxy/openroad \
   --benchmarks OpenROAD \
   --only_eval_ok
 ```
@@ -61,8 +61,8 @@ ICCAD2015：
 ```bash
 python src/utils/analyze_ppa_proxy.py \
   --ppa_csv <your_iccad_ppa_csv> \
-  --hv_json analysis_reports/hv_summary_seed_1.json \
-  --output_dir analysis_reports/ppa_proxy_iccad \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seed_1.json \
+  --output_dir results/analysis_reports/ppa_proxy/iccad \
   --benchmarks ICCAD2015 \
   --only_eval_ok
 ```
@@ -72,8 +72,8 @@ python src/utils/analyze_ppa_proxy.py \
 ```bash
 python src/utils/analyze_ppa_proxy.py \
   --ppa_csv <merged_ppa_csv> \
-  --hv_json analysis_reports/hv_summary_seed_1.json \
-  --output_dir analysis_reports/ppa_proxy_all \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seed_1.json \
+  --output_dir results/analysis_reports/ppa_proxy/all \
   --benchmarks all \
   --only_eval_ok
 ```
@@ -83,8 +83,9 @@ python src/utils/analyze_ppa_proxy.py \
 输出目录默认结构：
 
 ```text
-analysis_reports/ppa_proxy_study_seed_1/
-  analysis_report.md
+results/analysis_reports/ppa_proxy/study_seed_1/
+  reports/
+    analysis_report.md
   figures/
     box_<metric>_by_formulation.pdf/.png
     scatter_hv_vs_<metric>.pdf/.png
@@ -106,6 +107,23 @@ analysis_reports/ppa_proxy_study_seed_1/
     proxy_mode_object_sets.csv/.tex
     ppa_with_proxy_alignment.csv
     proxy_long_alignment.csv
+
+推荐统一目录（轻量分类）：
+
+```text
+results/analysis_reports/
+  hv/
+    markdown/
+    latex/
+    json/
+  ppa_eval/
+    seed_<seed>/
+  ppa_proxy/
+    <study_name>/
+      reports/
+      tables/
+      figures/
+```
 ```
 
 ## 5. 建议论文呈现方式

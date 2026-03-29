@@ -43,6 +43,18 @@ FORMULATIONS = ["MGO", "HPO"]
 N_DEF_TOP = 5
 
 
+def find_default_hv_json(workspace_root, output_dir, seed):
+    candidates = [
+        os.path.join(output_dir, f"hv_summary_seed_{seed}.json"),
+        os.path.join(workspace_root, "results", "analysis_reports", "hv", "json", f"hv_summary_seed_{seed}.json"),
+        os.path.join(workspace_root, "results", "analysis_reports", "hv", f"hv_summary_seed_{seed}.json"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return candidates[0]
+
+
 def parse_csv_or_all(value, valid_values=None):
     if value is None:
         return None
@@ -351,7 +363,12 @@ def main():
         description="Evaluate GP PPA for best-HV algorithm per case/formulation (subprocess mode)"
     )
     parser.add_argument("--workspace", type=str, default=".", help="Workspace root")
-    parser.add_argument("--output", type=str, default="analysis_reports", help="Output directory")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=os.path.join("results", "analysis_reports", "ppa_eval"),
+        help="Base output directory",
+    )
     parser.add_argument("--seed", type=int, required=True, help="Seed to evaluate")
     parser.add_argument("--hv_json", type=str, default=None, help="Path to hv_summary_seed_<seed>.json")
     parser.add_argument("--platform", type=str, default="nangate45", help="OpenROAD platform")
@@ -371,10 +388,11 @@ def main():
     args = parser.parse_args()
 
     workspace_root = os.path.abspath(args.workspace)
-    output_dir = os.path.abspath(args.output)
+    base_output_dir = os.path.abspath(args.output)
+    output_dir = os.path.join(base_output_dir, f"seed_{args.seed}")
     os.makedirs(output_dir, exist_ok=True)
 
-    hv_json = os.path.abspath(args.hv_json) if args.hv_json else os.path.join(output_dir, f"hv_summary_seed_{args.seed}.json")
+    hv_json = os.path.abspath(args.hv_json) if args.hv_json else find_default_hv_json(workspace_root, base_output_dir, args.seed)
     if not os.path.exists(hv_json):
         raise FileNotFoundError(f"HV summary json not found: {hv_json}")
 
@@ -412,6 +430,7 @@ def main():
         )
 
     print_plan(tasks, args.preview_limit, args.estimate_per_def_min)
+    print(f"Output directory: {output_dir}")
     print(f"Plan saved to: {plan_out}")
 
     if args.dry_run:

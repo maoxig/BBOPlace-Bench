@@ -211,7 +211,14 @@ def analyze_benchmark(benchmark_name, output_dir, workspace_root, seed):
     prefix = BENCHMARKS[benchmark_name]["prefix"]
     results_dir = os.path.join(workspace_root, "results")
 
-    analysis_file = os.path.join(output_dir, f"{benchmark_name}_seed{seed}_Analysis.md")
+    markdown_dir = os.path.join(output_dir, "markdown")
+    latex_dir = os.path.join(output_dir, "latex")
+    json_dir = os.path.join(output_dir, "json")
+    os.makedirs(markdown_dir, exist_ok=True)
+    os.makedirs(latex_dir, exist_ok=True)
+    os.makedirs(json_dir, exist_ok=True)
+
+    analysis_file = os.path.join(markdown_dir, f"{benchmark_name}_seed{seed}_Analysis.md")
     bench_summary = {
         "benchmark": benchmark_name,
         "seed": int(seed),
@@ -219,7 +226,7 @@ def analyze_benchmark(benchmark_name, output_dir, workspace_root, seed):
     }
 
     with open(analysis_file, "w") as f:
-        f.write(f"# Analysis for {benchmark_name} (seed={seed})\\n\\n")
+        f.write(f"# Analysis for {benchmark_name} (seed={seed})\n\n")
 
         for mode in MODES:
             print(f"Processing {benchmark_name} - {mode} - seed {seed}...")
@@ -280,18 +287,18 @@ def analyze_benchmark(benchmark_name, output_dir, workspace_root, seed):
 
                     hv_results[case][form] = form_result
 
-            f.write(f"## {mode} Mode Results\\n\\n")
+            f.write(f"## {mode} Mode Results\n\n")
             table_md = generate_markdown_table(benchmark_name, mode, hv_results)
             f.write(table_md)
-            f.write("\\n\\n")
+            f.write("\n\n")
 
-            latex_file = os.path.join(output_dir, f"{benchmark_name}_{mode}_seed{seed}_Table.tex")
+            latex_file = os.path.join(latex_dir, f"{benchmark_name}_{mode}_seed{seed}_Table.tex")
             table_latex = generate_latex_table(benchmark_name, mode, hv_results)
             with open(latex_file, "w") as lf:
                 lf.write(table_latex)
             print(f"  LaTeX table saved to {latex_file}")
 
-            mode_json_file = os.path.join(output_dir, f"{benchmark_name}_{mode}_seed{seed}_hv.json")
+            mode_json_file = os.path.join(json_dir, f"{benchmark_name}_{mode}_seed{seed}_hv.json")
             with open(mode_json_file, "w") as jf:
                 json.dump(
                     {
@@ -315,7 +322,12 @@ def analyze_benchmark(benchmark_name, output_dir, workspace_root, seed):
 def main():
     parser = argparse.ArgumentParser(description="Generate seed-specific HV tables and JSON summaries")
     parser.add_argument("--workspace", type=str, default=".", help="Workspace root directory")
-    parser.add_argument("--output", type=str, default="analysis_reports", help="Output directory")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=os.path.join("results", "analysis_reports", "hv"),
+        help="Output directory",
+    )
     parser.add_argument("--seed", type=int, required=True, help="Seed id for this analysis round")
     args = parser.parse_args()
 
@@ -334,7 +346,9 @@ def main():
     for benchmark in BENCHMARKS:
         summary["benchmarks"][benchmark] = analyze_benchmark(benchmark, output_dir, workspace_root, args.seed)
 
-    summary_json = os.path.join(output_dir, f"hv_summary_seed_{args.seed}.json")
+    json_dir = os.path.join(output_dir, "json")
+    os.makedirs(json_dir, exist_ok=True)
+    summary_json = os.path.join(json_dir, f"hv_summary_seed_{args.seed}.json")
     with open(summary_json, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"Combined JSON summary saved to {summary_json}")

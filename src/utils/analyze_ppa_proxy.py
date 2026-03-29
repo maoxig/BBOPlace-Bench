@@ -929,7 +929,11 @@ def main():
     parser = argparse.ArgumentParser(description="Joint analysis for PPA metrics and proxy objectives")
     parser.add_argument("--ppa_csv", required=True, help="Path to PPA evaluation CSV")
     parser.add_argument("--hv_json", default=None, help="Path to hv_summary_seed_*.json")
-    parser.add_argument("--output_dir", default="analysis_reports/ppa_proxy_study", help="Output directory")
+    parser.add_argument(
+        "--output_dir",
+        default=os.path.join("results", "analysis_reports", "ppa_proxy", "study"),
+        help="Output directory",
+    )
     parser.add_argument("--benchmarks", default="all", help="all or comma list")
     parser.add_argument("--cases", default="all", help="all or comma list")
     parser.add_argument("--formulations", default="MGO,HPO", help="Comma list")
@@ -938,8 +942,10 @@ def main():
 
     configure_style()
     ensure_dir(args.output_dir)
+    report_dir = os.path.join(args.output_dir, "reports")
     fig_dir = os.path.join(args.output_dir, "figures")
     tab_dir = os.path.join(args.output_dir, "tables")
+    ensure_dir(report_dir)
     ensure_dir(fig_dir)
     ensure_dir(tab_dir)
 
@@ -1043,7 +1049,7 @@ def main():
     make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir)
 
     write_report(
-        report_path=os.path.join(args.output_dir, "analysis_report.md"),
+        report_path=os.path.join(report_dir, "analysis_report.md"),
         args=args,
         ppa_df=ppa_df,
         ppa_metrics=ppa_metrics,
