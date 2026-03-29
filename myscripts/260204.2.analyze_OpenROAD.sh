@@ -1,8 +1,8 @@
 # python ~/project/BBOPlace-Bench/src/util/analyze_final_results.py --result_path /home/xp/project/BBOPlace-Bench/results/superblue1/MO_ICCAD2015_MGO_NSGA2_MP/mgo/nsga2/seed_1_2026-01-31_09-27-25 --obj_labels hpwl regularity rudy
 #!/bin/bash
 
-BASE_DIR="/home/xp/project/BBOPlace-Bench/results"
-PYTHON_SCRIPT="/home/xp/project/BBOPlace-Bench/src/utils/analyze_final_results.py"
+BASE_DIR="/workspace/results"
+PYTHON_SCRIPT="/workspace/src/utils/analyze_final_results.py"
 
 
 # Call the script for specific benchmarks and methods
