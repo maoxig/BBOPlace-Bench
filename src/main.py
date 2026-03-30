@@ -171,12 +171,20 @@ if __name__ == "__main__":
     num_gpus = len(args.gpu.split(',')) if hasattr(args, "gpu") and args.gpu else 0
     args.num_gpus = num_gpus
     args.num_cpus = num_cpus
+    # Prefer configurable temp dir to avoid noisy file_system_monitor warnings on high-utilized home disks.
+    ray_temp_dir = getattr(args, "ray_temp_dir", None)
+    if ray_temp_dir is None:
+        ray_temp_dir = os.environ.get("RAY_TMPDIR", "")
+    if not ray_temp_dir:
+        ray_temp_dir = os.path.join(ROOT_DIR, "results", "_ray_tmp")
+    os.makedirs(ray_temp_dir, exist_ok=True)
+
     ray.init(
         num_cpus=num_cpus,
         num_gpus=num_gpus,
         include_dashboard=False,
         logging_level=logging.ERROR,
-        _temp_dir=os.path.expanduser('~/tmp'),
+        _temp_dir=ray_temp_dir,
         ignore_reinit_error=True,
     )
 

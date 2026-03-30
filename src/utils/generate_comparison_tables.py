@@ -50,7 +50,9 @@ def load_pareto_front(result_path):
 
 def find_latest_seed_run(base_result_path, seed):
     """
-    Find latest run directory matching seed_{seed}_* under base_result_path.
+    Find latest successful run directory matching seed_{seed}_* under base_result_path.
+    Success criterion: run contains loadable and non-empty final solution front.
+    Fallback: if no successful run exists, return latest run regardless of success.
     """
     if not os.path.isdir(base_result_path):
         return None
@@ -65,8 +67,19 @@ def find_latest_seed_run(base_result_path, seed):
     if not candidates:
         return None
 
-    # Timestamp suffix is lexical sortable with format %Y-%m-%d_%H-%M-%S
+    # Timestamp suffix is lexical sortable with format %Y-%m-%d_%H-%M-%S.
     candidates.sort()
+
+    successful = []
+    for name in candidates:
+        run_path = os.path.join(base_result_path, name)
+        front = load_pareto_front(run_path)
+        if front is not None and len(front) > 0:
+            successful.append(name)
+
+    if successful:
+        return os.path.join(base_result_path, successful[-1])
+
     return os.path.join(base_result_path, candidates[-1])
 
 
