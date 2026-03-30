@@ -108,10 +108,17 @@ class DREAMPlaceActor:
                 "macro_pos": {},
                 "gp_hpwl": INF
             }
+
+        # Always refresh from rawdb first so each evaluation starts from a
+        # clean, unscaled DB state. This avoids state drift across calls.
+        self.placedb.initialize_from_rawdb(self.params)
+
         self._setup_dmp_scale_factor()
         self._update_macro_pos(macro_pos)
-        if self.placer is None:
-            self.__init_placer()
+
+        # _update_macro_pos may change DB-derived dimensions (e.g. fillers).
+        # Rebuild placer to keep all ops and tensors consistent with new DB.
+        self.__init_placer()
 
         self._update_dmp_placer()
         # 2. 运行评估
@@ -411,10 +418,15 @@ class DREAMPlaceActor:
 
 
     def _update_dmp_placer(self):
+        new_init_pos = th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
+
+        # Safety net: if DB size changed, rebuild placer before copying data.
+        if self.placer.pos[0].data.numel() != new_init_pos.numel():
+            self.__init_placer()
+            new_init_pos = th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
+
         with th.no_grad():
-            self.placer.pos[0].data.copy_(
-                th.from_numpy(self.placer._initialize_position(self.params, self.placedb)).to(self.placer.device)
-            )
+            self.placer.pos[0].data.copy_(new_init_pos)
 
     def _setup_dmp_scale_factor(self):
         # shift and scale
