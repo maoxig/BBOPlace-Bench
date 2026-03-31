@@ -26,96 +26,44 @@ class AdaptiveDecomposition:
         self.method = method
         self.algo = None
         self.nadir = initial_nadir
+        self.valid_upper = INF * 0.9
 
     def set_algo(self, algo):
         self.algo = algo
     
     def do(self, F, weights, **kwargs):
-        ideal = kwargs.get('ideal_point')
+        ideal = kwargs.pop('ideal_point', None)
         if ideal is None:
             return self.method.do(F, weights, **kwargs)
 
-        # 1. Validate inputs and self.nadir consistency
-        # Determine number of objectives from input F
-        n_objs = F.shape[-1] if F.ndim > 0 else 0
-        
-        # If self.nadir exists but dimension mismatches, invalidate it so it gets re-initialized
-        if self.nadir is not None:
-             if self.nadir.size != n_objs:
-                 self.nadir = None
+        F_arr = np.asarray(F)
+        F_2d = F_arr.reshape(1, -1) if F_arr.ndim == 1 else F_arr
+        n_objs = F_2d.shape[1]
 
-        # Update nadir
-        # If algo is available, check pop
-        current_F_pop = None
-        if self.algo is not None and self.algo.pop is not None:
-            current_F_pop = self.algo.pop.get("F")
-        
-        candidates = []
-        if self.nadir is not None:
-             # Ensure nadir is strictly 2D for stacking and has correct columns
-             nadir_2d = np.atleast_2d(self.nadir)
-             if nadir_2d.shape[1] == n_objs:
-                candidates.append(nadir_2d)
-             else:
-                self.nadir = None # Should not happen due to check above, but safe fallback
-        
-        if current_F_pop is not None and len(current_F_pop) > 0:
-             # Only add population if dimensions match
-             if current_F_pop.ndim < 2: current_F_pop = current_F_pop.reshape(-1, n_objs)
-             if current_F_pop.shape[1] == n_objs:
-                candidates.append(current_F_pop)
-             
-        if F.ndim == 1:
-             F_reshaped = F.reshape(1, -1)
-             if F_reshaped.shape[1] == n_objs:
-                 candidates.append(F_reshaped)
+        if self.nadir is None or np.asarray(self.nadir).size != n_objs:
+            self.nadir = np.ones(n_objs, dtype=F_2d.dtype)
         else:
-             if F.shape[1] == n_objs:
-                 candidates.append(F)
-             
-        if candidates:
-             # Update global nadir estimate
-             stack = np.vstack(candidates)
-             
-             if self.nadir is None:
-                 self.nadir = np.zeros(n_objs)
-             
-             # Robust update ignoring INF values (invalid solutions)
-             for i in range(n_objs):
-                 col = stack[:, i]
-                 # Filter out values close to INF
-                 valid_col = col[col < (INF * 0.9)]
-                 
-                 # Ensure we access self.nadir safely (it was re-inited to n_objs if needed)
-                 if valid_col.size > 0:
-                     self.nadir[i] = np.max(valid_col)
-                 elif self.nadir[i] == 0:
-                     self.nadir[i] = 1.0 # Default fallback if no valid values seen
-             else:
-                 # Fallback if candidates mismatch
-                 if self.nadir is None:
-                    self.nadir = np.ones(n_objs)
+            self.nadir = np.asarray(self.nadir, dtype=F_2d.dtype).reshape(-1)
 
+        # Incremental nadir update from current F only (hot path optimization).
+        valid_mask = np.isfinite(F_2d) & (F_2d < self.valid_upper)
+        if np.any(valid_mask):
+            cand = np.where(valid_mask, F_2d, -np.inf)
+            col_max = np.max(cand, axis=0)
+            has_valid = col_max > -np.inf
+            if np.any(has_valid):
+                self.nadir[has_valid] = np.maximum(self.nadir[has_valid], col_max[has_valid])
 
-        
-        if self.nadir is None:
-             self.nadir = np.ones_like(ideal)
-             
-        # Normalize
-        # Sanitize ideal if needed (though usually min won't pick INF unless all are INF)
-        local_ideal = ideal.copy()
-        local_ideal[local_ideal > (INF * 0.9)] = 0.0
-        
+        local_ideal = np.asarray(ideal, dtype=F_2d.dtype).copy()
+        ideal_valid = np.isfinite(local_ideal) & (local_ideal < self.valid_upper)
+        local_ideal = np.where(ideal_valid, local_ideal, 0.0)
+
         diff = self.nadir - local_ideal
-        diff[diff < 1e-6] = 1e-6
-        
-        F_norm = (F - local_ideal) / diff
-        
-        # Remove ideal_point from kwargs to avoid multiple values error
-        if 'ideal_point' in kwargs:
-            del kwargs['ideal_point']
+        diff = np.maximum(diff, 1e-6)
 
-        return self.method.do(F_norm, weights, ideal_point=np.zeros_like(ideal), **kwargs)
+        F_norm = (F_arr - local_ideal) / diff
+
+        return self.method.do(F_norm, weights, ideal_point=np.zeros_like(local_ideal), **kwargs)
 
 
 class MOEADDE(BasicAlgo):
@@ -210,13 +158,15 @@ class MOEADDE(BasicAlgo):
         from pymoo.decomposition.pbi import PBI
 
         decomposition = PBI()
+        adaptive_decomposition = None
         if getattr(self.args, "adaptive_normalization", False):
             if sampling.get("F") is None:
                 from pymoo.core.evaluator import Evaluator
                 Evaluator().eval(self.problem, sampling)
             
             initial_nadir = np.max(sampling.get("F"), axis=0)
-            decomposition = AdaptiveDecomposition(PBI(), initial_nadir=initial_nadir)
+            adaptive_decomposition = AdaptiveDecomposition(PBI(), initial_nadir=initial_nadir)
+            decomposition = adaptive_decomposition
 
         self._algo = MOEAD(
             ref_dirs=self.ref_dirs,
@@ -227,8 +177,8 @@ class MOEADDE(BasicAlgo):
             callback=self._save_callback,
         )
 
-        if getattr(self.args, "adaptive_normalization", False):
-            decomposition.set_algo(self._algo)
+        if adaptive_decomposition is not None:
+            adaptive_decomposition.set_algo(self._algo)
 
         res = minimize(
             problem=self.problem,
