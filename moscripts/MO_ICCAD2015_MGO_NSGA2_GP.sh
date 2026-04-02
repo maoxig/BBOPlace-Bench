@@ -21,5 +21,5 @@ python ../src/main.py \
     --eval_metrics='["gp_hpwl","overflow","route_utilization"]' \
     --eval_gp_hpwl=True \
     --n_max_saving_placement=5 \
-    --verbose=True
+    --verbose=False
 done

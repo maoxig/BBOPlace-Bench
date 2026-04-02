@@ -223,13 +223,12 @@ for script in "${selected[@]}"; do
   log_file="${LOG_DIR}/${script%.sh}.${ROUND_LABEL}.log"
   run_artifact_dir="${ARTIFACT_DIR}/${script%.sh}"
   tmp_dir="${run_artifact_dir}/tmp"
-  ray_tmp_dir="${run_artifact_dir}/ray_tmp"
   wandb_dir="${run_artifact_dir}/wandb"
   wandb_cache_dir="${run_artifact_dir}/wandb_cache"
   wandb_config_dir="${run_artifact_dir}/wandb_config"
   wandb_data_dir="${run_artifact_dir}/wandb_data"
 
-  env_prefix="mkdir -p '${tmp_dir}' '${ray_tmp_dir}' '${wandb_dir}' '${wandb_cache_dir}' '${wandb_config_dir}' '${wandb_data_dir}' && export TMPDIR='${tmp_dir}' TEMP='${tmp_dir}' TMP='${tmp_dir}' RAY_TMPDIR='${ray_tmp_dir}' WANDB_DIR='${wandb_dir}' WANDB_CACHE_DIR='${wandb_cache_dir}' WANDB_CONFIG_DIR='${wandb_config_dir}' WANDB_DATA_DIR='${wandb_data_dir}'"
+  env_prefix="mkdir -p '${tmp_dir}' '${wandb_dir}' '${wandb_cache_dir}' '${wandb_config_dir}' '${wandb_data_dir}' && export TMPDIR='${tmp_dir}' TEMP='${tmp_dir}' TMP='${tmp_dir}' WANDB_DIR='${wandb_dir}' WANDB_CACHE_DIR='${wandb_cache_dir}' WANDB_CONFIG_DIR='${wandb_config_dir}' WANDB_DATA_DIR='${wandb_data_dir}'"
 
   # Run from moscripts so relative paths in target scripts keep working.
   if [[ "${ENABLE_DOCKER}" == "1" ]]; then
