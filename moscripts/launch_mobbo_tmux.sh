@@ -240,10 +240,10 @@ for script in "${selected[@]}"; do
   if [[ -n "${CONDA_ENV_NAME}" ]]; then
     full_cmd="source \"\$HOME/.bashrc\" >/dev/null 2>&1 || true && conda activate '${CONDA_ENV_NAME}' && ${full_cmd}"
   fi
-
-  if [[ "${CONFIRM_BEFORE_RUN}" == "1" ]]; then
-    full_cmd="echo '[READY] ${script}'; echo '[READY] window=${window_name}'; echo '[READY] press Enter to start, Ctrl+C to skip'; read -r _confirm_input; ${full_cmd}"
-  fi
+if [[ "${CONFIRM_BEFORE_RUN}" == "1" ]]; then
+  script_link="\e]8;;file://${PWD}/moscripts/${script}\e\\./moscripts/${script}\e]8;;\e\\"
+  full_cmd="echo -e '[READY] ${script_link}'; echo '[READY] window=${window_name}'; echo '[READY] press Enter to start, Ctrl+C to skip'; read -r _confirm_input; ${full_cmd}"
+fi
 
   quoted_cmd="$(printf '%q' "${full_cmd}")"
   if [[ "${KEEP_SHELL_AFTER_EXIT}" == "1" ]]; then
