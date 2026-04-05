@@ -42,6 +42,57 @@ def parse_filters(csv_text):
     return [x.strip() for x in csv_text.split(",") if x.strip()]
 
 
+def parse_seeds(seed_text):
+    items = [x.strip() for x in str(seed_text).split(",") if x.strip()]
+    if not items:
+        raise ValueError("--seeds is empty")
+    return [int(x) for x in items]
+
+
+def parse_csv_list(csv_text):
+    if csv_text is None or str(csv_text).strip() == "":
+        return []
+    return [x.strip() for x in str(csv_text).split(",") if x.strip()]
+
+
+def infer_seed_from_path(path_text):
+    m = re.search(r"seed_(\d+)", str(path_text))
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def load_ppa_frames(ppa_csv, ppa_csvs):
+    paths = []
+    if ppa_csv:
+        paths.append(ppa_csv)
+    paths.extend(ppa_csvs)
+
+    # Keep order and deduplicate.
+    uniq_paths = []
+    seen = set()
+    for p in paths:
+        ap = os.path.abspath(p)
+        if ap not in seen:
+            seen.add(ap)
+            uniq_paths.append(ap)
+
+    if not uniq_paths:
+        raise ValueError("No PPA CSV provided. Use --ppa_csv or --ppa_csvs.")
+
+    frames = []
+    for p in uniq_paths:
+        df = pd.read_csv(p)
+        if "seed" not in df.columns:
+            seed_guess = infer_seed_from_path(p)
+            if seed_guess is not None:
+                df["seed"] = int(seed_guess)
+        df["source_csv"] = p
+        frames.append(df)
+
+    return pd.concat(frames, ignore_index=True)
+
+
 def infer_metric_columns(df):
     candidate_cols = [
         "GRT_WL",
@@ -88,6 +139,34 @@ def choose_ppa_metrics(df):
             seen.add(m)
             out.append(m)
     return out
+
+
+def normalize_metric_direction(df, metrics):
+    """
+    Convert maximize-style metrics into minimize-style proxies for consistent analysis.
+    For readability, WNS/TNS are transformed to -WNS/-TNS.
+    """
+    out = df.copy()
+    norm_metrics = []
+    metric_labels = {}
+
+    for m in metrics:
+        if str(m).upper() in {"WNS", "TNS"}:
+            col = f"NEG_{m.upper()}"
+            out[col] = -pd.to_numeric(out[m], errors="coerce")
+            norm_metrics.append(col)
+            metric_labels[col] = f"-{m.upper()}"
+        else:
+            norm_metrics.append(m)
+            metric_labels[m] = m
+
+    return out, norm_metrics, metric_labels
+
+
+def metric_label(metric, metric_labels=None):
+    if metric_labels and metric in metric_labels:
+        return metric_labels[metric]
+    return str(metric)
 
 
 def save_df(df, out_csv, out_tex):
@@ -180,17 +259,46 @@ def load_hv_table_all_modes(hv_json_path):
         for mode, mode_data in bench_data.get("modes", {}).items():
             for case, case_data in mode_data.get("cases", {}).items():
                 for form, form_data in case_data.items():
-                    rows.append(
-                        {
-                            "benchmark": bench,
-                            "mode": mode,
-                            "case": case,
-                            "formulation": form,
-                            "best_hv": form_data.get("best_hv", np.nan),
-                            "best_algo": form_data.get("best_algo", ""),
-                            "run_path": form_data.get("best_run_path", ""),
-                        }
-                    )
+                    if "best_run_path" in form_data:
+                        rows.append(
+                            {
+                                "benchmark": bench,
+                                "mode": mode,
+                                "case": case,
+                                "formulation": form,
+                                "seed": data.get("seed", np.nan),
+                                "best_hv": form_data.get("best_hv", np.nan),
+                                "best_hv_mean": form_data.get("best_hv", np.nan),
+                                "best_algo": form_data.get("best_algo", ""),
+                                "run_path": form_data.get("best_run_path", ""),
+                            }
+                        )
+                        continue
+
+                    best_algo = form_data.get("best_algo_by_mean")
+                    best_hv_mean = form_data.get("best_hv_mean", np.nan)
+                    algo_data = form_data.get("algorithms", {}).get(best_algo, {}) if best_algo else {}
+                    hv_by_seed = algo_data.get("hv_by_seed", {}) if isinstance(algo_data, dict) else {}
+                    run_by_seed = algo_data.get("run_path_by_seed", {}) if isinstance(algo_data, dict) else {}
+
+                    for seed_key, run_path in run_by_seed.items():
+                        try:
+                            seed_val = int(seed_key)
+                        except Exception:
+                            seed_val = np.nan
+                        rows.append(
+                            {
+                                "benchmark": bench,
+                                "mode": mode,
+                                "case": case,
+                                "formulation": form,
+                                "seed": seed_val,
+                                "best_hv": hv_by_seed.get(seed_key, np.nan),
+                                "best_hv_mean": best_hv_mean,
+                                "best_algo": best_algo,
+                                "run_path": run_path,
+                            }
+                        )
     return pd.DataFrame(rows)
 
 
@@ -390,6 +498,66 @@ def summarize_by_group(df, metrics):
     return pd.DataFrame(rows)
 
 
+def summarize_by_group_seed(df, metrics):
+    if "seed" not in df.columns:
+        return pd.DataFrame()
+
+    rows = []
+    gcols = ["seed", "benchmark", "case", "formulation"]
+    for keys, sub in df.groupby(gcols, sort=True):
+        row = dict(zip(gcols, keys))
+        row["n_defs"] = int(len(sub))
+        row["best_hv"] = float(sub["best_hv"].dropna().iloc[0]) if "best_hv" in sub.columns and sub["best_hv"].notna().any() else np.nan
+        row["best_hv_mean"] = float(sub["best_hv_mean"].dropna().iloc[0]) if "best_hv_mean" in sub.columns and sub["best_hv_mean"].notna().any() else np.nan
+        row["best_algo"] = str(sub["best_algo"].iloc[0]) if "best_algo" in sub.columns else ""
+
+        for m in metrics:
+            vals = sub[m].dropna().to_numpy(dtype=float)
+            if vals.size == 0:
+                row[f"{m}_mean"] = np.nan
+                row[f"{m}_std"] = np.nan
+                row[f"{m}_best"] = np.nan
+            else:
+                row[f"{m}_mean"] = float(np.mean(vals))
+                row[f"{m}_std"] = float(np.std(vals, ddof=1)) if vals.size > 1 else 0.0
+                row[f"{m}_best"] = float(np.min(vals)) if is_metric_minimize(m) else float(np.max(vals))
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+def aggregate_seed_summary(summary_seed_df, metrics):
+    if summary_seed_df.empty:
+        return pd.DataFrame()
+
+    rows = []
+    gcols = ["benchmark", "case", "formulation"]
+    for keys, sub in summary_seed_df.groupby(gcols, sort=True):
+        row = dict(zip(gcols, keys))
+        row["n_seeds"] = int(sub["seed"].nunique()) if "seed" in sub.columns else 0
+        row["n_seed_rows"] = int(len(sub))
+
+        if "best_hv" in sub.columns:
+            hv_vals = sub["best_hv"].dropna().to_numpy(dtype=float)
+            if hv_vals.size:
+                row["best_hv_seed_mean"] = float(np.mean(hv_vals))
+                row["best_hv_seed_std"] = float(np.std(hv_vals, ddof=1)) if hv_vals.size > 1 else 0.0
+
+        if "best_hv_mean" in sub.columns and sub["best_hv_mean"].notna().any():
+            row["best_hv_mean"] = float(sub["best_hv_mean"].dropna().iloc[0])
+
+        for m in metrics:
+            best_col = f"{m}_best"
+            if best_col in sub.columns:
+                vals = sub[best_col].dropna().to_numpy(dtype=float)
+                if vals.size:
+                    row[f"{m}_best_seed_mean"] = float(np.mean(vals))
+                    row[f"{m}_best_seed_std"] = float(np.std(vals, ddof=1)) if vals.size > 1 else 0.0
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
 def compute_hv_metric_correlation(summary_df, metrics):
     rows = []
     if "best_hv" not in summary_df.columns:
@@ -415,7 +583,10 @@ def compute_hv_metric_correlation(summary_df, metrics):
 
 def compare_hpo_mgo(summary_df, metrics):
     rows = []
-    piv = summary_df.pivot(index=["benchmark", "case"], columns="formulation")
+    idx_cols = ["benchmark", "case"]
+    if "seed" in summary_df.columns:
+        idx_cols = ["seed"] + idx_cols
+    piv = summary_df.pivot(index=idx_cols, columns="formulation")
     if piv.empty:
         return pd.DataFrame()
 
@@ -555,7 +726,7 @@ def compute_top1_hit_rate(proxy_long_df, ppa_metrics):
     return detail_df, summary_df
 
 
-def make_boxplots(df, metrics, fig_dir):
+def make_boxplots(df, metrics, fig_dir, metric_labels=None):
     for m in metrics:
         fig, ax = plt.subplots(figsize=(6.3, 4.2))
         data = []
@@ -572,12 +743,13 @@ def make_boxplots(df, metrics, fig_dir):
         for patch, color in zip(bp["boxes"], ["#4C78A8", "#F58518"]):
             patch.set_facecolor(color)
             patch.set_alpha(0.65)
-        ax.set_title(f"{m}: Distribution by Formulation")
-        ax.set_ylabel(m)
+        ml = metric_label(m, metric_labels)
+        ax.set_title(f"{ml}: Distribution by Formulation")
+        ax.set_ylabel(ml)
         save_dual(fig, fig_dir, f"box_{m}_by_formulation")
 
 
-def make_hv_scatter(df, metrics, fig_dir):
+def make_hv_scatter(df, metrics, fig_dir, metric_labels=None):
     if "best_hv" not in df.columns:
         return
     for m in metrics:
@@ -597,17 +769,18 @@ def make_hv_scatter(df, metrics, fig_dir):
             xx = np.linspace(np.min(x), np.max(x), 120)
             ax.plot(xx, k * xx + b, linestyle="--", color="black", linewidth=1.1)
 
+        ml = metric_label(m, metric_labels)
         ax.set_title(
-            f"HV vs {m} (spearman={safe_corr(sub['best_hv'], sub[m], 'spearman'):.3f}, "
+            f"HV vs {ml} (spearman={safe_corr(sub['best_hv'], sub[m], 'spearman'):.3f}, "
             f"pearson={safe_corr(sub['best_hv'], sub[m], 'pearson'):.3f})"
         )
         ax.set_xlabel("best_hv")
-        ax.set_ylabel(m)
+        ax.set_ylabel(ml)
         ax.legend(frameon=False)
         save_dual(fig, fig_dir, f"scatter_hv_vs_{m}")
 
 
-def make_case_metric_heatmap(summary_df, metric, fig_dir):
+def make_case_metric_heatmap(summary_df, metric, fig_dir, metric_labels=None):
     col = f"{metric}_best"
     if col not in summary_df.columns:
         return
@@ -621,7 +794,8 @@ def make_case_metric_heatmap(summary_df, metric, fig_dir):
     ax.set_xticklabels(list(piv.columns))
     ax.set_yticks(np.arange(len(piv.index)))
     ax.set_yticklabels(list(piv.index))
-    ax.set_title(f"Best {metric} by Case and Formulation")
+    ml = metric_label(metric, metric_labels)
+    ax.set_title(f"Best {ml} by Case and Formulation")
     for i in range(arr.shape[0]):
         for j in range(arr.shape[1]):
             txt = "nan" if not np.isfinite(arr[i, j]) else f"{arr[i, j]:.3g}"
@@ -630,7 +804,7 @@ def make_case_metric_heatmap(summary_df, metric, fig_dir):
     save_dual(fig, fig_dir, f"heatmap_best_{metric}")
 
 
-def make_performance_profile(summary_df, metrics, fig_dir):
+def make_performance_profile(summary_df, metrics, fig_dir, metric_labels=None):
     for m in metrics:
         col = f"{m}_best"
         if col not in summary_df.columns:
@@ -659,7 +833,8 @@ def make_performance_profile(summary_df, metrics, fig_dir):
         ax.set_xlabel("tau")
         ax.set_ylabel("rho(tau)")
         ax.set_ylim(0.0, 1.03)
-        ax.set_title(f"Performance Profile ({m})")
+        ml = metric_label(m, metric_labels)
+        ax.set_title(f"Performance Profile ({ml})")
         ax.legend(frameon=False)
         save_dual(fig, fig_dir, f"profile_{m}")
 
@@ -768,7 +943,7 @@ def make_proxy_mode_dim_bar(catalog_df, fig_dir):
     save_dual(fig, fig_dir, "bar_proxy_dim_by_mode")
 
 
-def make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir):
+def make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir, metric_labels=None):
     if proxy_long_df.empty:
         return
 
@@ -808,12 +983,19 @@ def make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, t
     cmap = plt.get_cmap("coolwarm").copy()
     cmap.set_bad(color="white")
 
+    display_order = []
+    for c in ordered:
+        if c in ppa_cols:
+            display_order.append(metric_label(c, metric_labels))
+        else:
+            display_order.append(c)
+
     fig, ax = plt.subplots(figsize=(0.56 * len(ordered) + 3.0, 0.56 * len(ordered) + 2.8))
     im = ax.imshow(arr, cmap=cmap, vmin=-1.0, vmax=1.0, aspect="equal")
     ax.set_xticks(np.arange(len(ordered)))
-    ax.set_xticklabels(ordered, rotation=65, ha="right", fontsize=8)
+    ax.set_xticklabels(display_order, rotation=65, ha="right", fontsize=8)
     ax.set_yticks(np.arange(len(ordered)))
-    ax.set_yticklabels(ordered, fontsize=8)
+    ax.set_yticklabels(display_order, fontsize=8)
     ax.set_title("All-Metrics Spearman Correlation (Proxy vs PPA)")
 
     # Match style with proxy-vs-ppa heatmap: show values in cells.
@@ -841,6 +1023,9 @@ def write_report(report_path, args, ppa_df, ppa_metrics, summary_df, hv_corr_df,
     lines.append(f"- Input HV JSON: {args.hv_json if args.hv_json else 'N/A'}")
     lines.append(f"- Output directory: {args.output_dir}")
     lines.append(f"- Rows after filtering: {len(ppa_df)}")
+    if "seed" in ppa_df.columns:
+        seeds = sorted(ppa_df["seed"].dropna().astype(int).unique().tolist())
+        lines.append(f"- Seeds in PPA: {seeds}")
     lines.append(f"- Proxy map success rows: {int(ppa_df['proxy_map_ok'].sum()) if 'proxy_map_ok' in ppa_df.columns else 0}")
     lines.append(f"- Benchmarks in PPA: {', '.join(sorted(ppa_df['benchmark'].dropna().astype(str).unique()))}")
     lines.append(f"- Cases in PPA: {', '.join(sorted(ppa_df['case'].dropna().astype(str).unique()))}")
@@ -918,7 +1103,7 @@ def write_report(report_path, args, ppa_df, ppa_metrics, summary_df, hv_corr_df,
     lines.append("- proxy_obj_i 来源于 checkpoint/final_solutions.pkl 中第 i 维 Y。")
     lines.append("- 相关图表中代理目标显示为 mode:objective_name（例如 GP:gp_hpwl, MP:hpwl）。")
     lines.append("- proxy 与 DEF 的映射使用 def_rank -> final_solutions[def_rank-1]。")
-    lines.append("- 指标方向：WNS/TNS 视为越大越好（通常为负值但越接近0越好），其余PPA指标按越小越好处理。")
+    lines.append("- 指标方向统一：分析阶段将 WNS/TNS 映射为 -WNS/-TNS，与其余指标统一为“越小越好”口径。")
     lines.append("- 当当前 PPA CSV 仅覆盖 GP（如 OpenROAD GP）时，MP 仅参与 proxy-object catalog，不参与 proxy↔PPA 直接相关。")
 
     with open(report_path, "w") as f:
@@ -992,6 +1177,9 @@ def main():
     if not ppa_metrics:
         raise ValueError("No numeric PPA metric columns found.")
 
+    ppa_df, ppa_metrics, metric_labels = normalize_metric_direction(ppa_df, ppa_metrics)
+    ppa_metrics_display = [metric_label(m, metric_labels) for m in ppa_metrics]
+
     ppa_df = attach_proxy_vectors_by_defrank(ppa_df)
     proxy_long_df = build_proxy_long_df(ppa_df, ppa_metrics)
 
@@ -1001,6 +1189,14 @@ def main():
     proxy_corr_df = compute_proxy_ppa_correlation(proxy_long_df, ppa_metrics)
     rank_df = compute_groupwise_rank_consistency(proxy_long_df, ppa_metrics)
     hit_detail_df, hit_summary_df = compute_top1_hit_rate(proxy_long_df, ppa_metrics)
+
+    # Convert metric identifiers to display labels for readability in tables.
+    for df_metric in [hv_corr_df, improve_df]:
+        if not df_metric.empty and "metric" in df_metric.columns:
+            df_metric["metric"] = df_metric["metric"].map(lambda x: metric_label(x, metric_labels))
+    for df_metric in [proxy_corr_df, rank_df, hit_summary_df, hit_detail_df]:
+        if not df_metric.empty and "ppa_metric" in df_metric.columns:
+            df_metric["ppa_metric"] = df_metric["ppa_metric"].map(lambda x: metric_label(x, metric_labels))
 
     if args.hv_json and not hv_df.empty:
         catalog_df = build_proxy_catalog_from_hv(hv_df)
@@ -1036,23 +1232,23 @@ def main():
     ppa_df.to_csv(os.path.join(tab_dir, "ppa_with_proxy_alignment.csv"), index=False)
     proxy_long_df.to_csv(os.path.join(tab_dir, "proxy_long_alignment.csv"), index=False)
 
-    make_boxplots(ppa_df, ppa_metrics, fig_dir)
-    make_hv_scatter(ppa_df, ppa_metrics, fig_dir)
-    make_performance_profile(summary_df, ppa_metrics, fig_dir)
+    make_boxplots(ppa_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
+    make_hv_scatter(ppa_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
+    make_performance_profile(summary_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
     for m in ppa_metrics:
-        make_case_metric_heatmap(summary_df, m, fig_dir)
+        make_case_metric_heatmap(summary_df, m, fig_dir, metric_labels=metric_labels)
 
     make_proxy_ppa_corr_heatmap(proxy_corr_df, fig_dir)
     make_rank_consistency_heatmap(rank_df, fig_dir)
     make_top1_hit_bar(hit_summary_df, fig_dir)
     make_proxy_mode_dim_bar(catalog_df, fig_dir)
-    make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir)
+    make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir, metric_labels=metric_labels)
 
     write_report(
         report_path=os.path.join(report_dir, "analysis_report.md"),
         args=args,
         ppa_df=ppa_df,
-        ppa_metrics=ppa_metrics,
+        ppa_metrics=ppa_metrics_display,
         summary_df=summary_df,
         hv_corr_df=hv_corr_df,
         improve_df=improve_df,

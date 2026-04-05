@@ -147,6 +147,7 @@ results/analysis_reports/
 - 计算组内（同一 run 的 top-5 DEF）排序一致性、Top-1 命中率（`argmin(proxy_obj_i)` 是否命中 `best PPA`）。
 - 同时输出 GP/MP 两种 mode 的 best-run 代理目标目录，便于讨论优化目标设计差异。
 - 脚本默认不分析 runtime/duration，它们已从指标集合中移除。
+- 为避免方向混淆，分析中会将 `WNS/TNS` 转换为 `-WNS/-TNS` 参与相关性、热力图和改进率统计（统一为“越小越好”）。
 
 ## 7. 注意事项
 
@@ -157,3 +158,62 @@ results/analysis_reports/
   - `--benchmarks OpenROAD` 时优先分析 `GRT_WL/DRT_WL/WNS/TNS/Power`。
   - `--benchmarks ICCAD2015` 时优先分析 `WNS/TNS`。
   - `--benchmarks all` 时取两类 benchmark 相关指标的并集并按可用性自动处理缺失。
+  - 方向统一后，图表中会显示 `-WNS/-TNS` 标签。
+
+## 8. 多种子 PPA 评估预算控制（速度 vs 严谨）
+
+当你有 3 个 seed 时，若每个 seed 保留 top-5 DEF，则每个 `(benchmark, case, formulation)` 最多会评估 `3 x 5 = 15` 个 DEF。
+
+`src/utils/evaluate_best_gp_ppa.py` 已支持两层控制：
+
+- `--def_per_seed`：每个 seed 的候选 DEF 数（默认 5）。
+- `--max_total_defs_per_setting`：跨 seed 总预算（默认 0，表示不截断）。
+- `--def_select_strategy`：预算截断策略。
+  - `seed_round_robin`（默认）：按 seed 轮转取 rank，兼顾 seed 覆盖与前沿质量。
+  - `top_rank`：只按 rank 优先，偏向最优点，速度快但多样性较弱。
+  - `rank_spread`：在候选序列中均匀抽样，保留一定形状覆盖。
+
+示例 1：3-seed 全量（每设置最多 15 个 DEF）
+
+```bash
+python src/utils/evaluate_best_gp_ppa.py \
+  --workspace . \
+  --seeds 1,2,3 \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seeds_1_2_3.json \
+  --output results/analysis_reports/ppa_eval \
+  --def_per_seed 5 \
+  --max_total_defs_per_setting 0 \
+  --def_select_strategy seed_round_robin
+```
+
+示例 2：3-seed 但每设置总共只测 5 个 DEF（推荐快速迭代）
+
+```bash
+python src/utils/evaluate_best_gp_ppa.py \
+  --workspace . \
+  --seeds 1,2,3 \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seeds_1_2_3.json \
+  --output results/analysis_reports/ppa_eval \
+  --def_per_seed 5 \
+  --max_total_defs_per_setting 5 \
+  --def_select_strategy seed_round_robin
+```
+
+示例 3：更强调 rank-1/2 最优值（偏“极值验证”）
+
+```bash
+python src/utils/evaluate_best_gp_ppa.py \
+  --workspace . \
+  --seeds 1,2,3 \
+  --hv_json results/analysis_reports/hv/json/hv_summary_seeds_1_2_3.json \
+  --output results/analysis_reports/ppa_eval \
+  --def_per_seed 5 \
+  --max_total_defs_per_setting 5 \
+  --def_select_strategy top_rank
+```
+
+论文口径建议：
+
+- 主实验：`max_total_defs_per_setting=15`（或 12）保证统计充分。
+- 消融/快速循环：`max_total_defs_per_setting=5` 并报告策略。
+- 在文中明确写出“DEF 预算策略”和“每设置有效样本数 n”。

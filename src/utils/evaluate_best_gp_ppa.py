@@ -40,7 +40,38 @@ BENCHMARKS = {
 }
 
 FORMULATIONS = ["MGO", "HPO"]
-N_DEF_TOP = 5
+DEFAULT_DEF_PER_SEED = 5
+
+
+def parse_seeds(seed_text):
+    items = [x.strip() for x in str(seed_text).split(",") if x.strip()]
+    if not items:
+        raise ValueError("--seeds is empty")
+    return [int(x) for x in items]
+
+
+def seed_tag(seeds):
+    return "_".join([str(int(s)) for s in seeds])
+
+
+def normalize_run_path(workspace_root, run_path):
+    if not run_path:
+        return run_path
+    rp = str(run_path)
+    candidates = [rp]
+
+    if rp.startswith("/workspace/"):
+        candidates.append(os.path.join(workspace_root, rp[len("/workspace/") :]))
+
+    marker = "/results/"
+    if marker in rp:
+        suffix = rp.split(marker, 1)[1]
+        candidates.append(os.path.join(workspace_root, "results", suffix))
+
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[-1]
 
 
 def find_default_hv_json(workspace_root, output_dir, seed):
@@ -48,6 +79,19 @@ def find_default_hv_json(workspace_root, output_dir, seed):
         os.path.join(output_dir, f"hv_summary_seed_{seed}.json"),
         os.path.join(workspace_root, "results", "analysis_reports", "hv", "json", f"hv_summary_seed_{seed}.json"),
         os.path.join(workspace_root, "results", "analysis_reports", "hv", f"hv_summary_seed_{seed}.json"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return candidates[0]
+
+
+def find_default_hv_json_multi(workspace_root, output_dir, seeds):
+    tag = seed_tag(seeds)
+    candidates = [
+        os.path.join(output_dir, f"hv_summary_seeds_{tag}.json"),
+        os.path.join(workspace_root, "results", "analysis_reports", "hv", "json", f"hv_summary_seeds_{tag}.json"),
+        os.path.join(workspace_root, "results", "analysis_reports", "hv", f"hv_summary_seeds_{tag}.json"),
     ]
     for p in candidates:
         if os.path.exists(p):
@@ -77,24 +121,30 @@ def parse_csv_or_all(value, valid_values=None):
     return items
 
 
-def load_hv_summary(summary_json, seed):
+def load_hv_summary(summary_json, seed=None, seeds=None):
     with open(summary_json, "r") as f:
         data = json.load(f)
 
-    seed_in_json = data.get("seed")
-    if seed_in_json is not None and int(seed_in_json) != int(seed):
-        print(f"[WARN] hv json seed={seed_in_json}, requested seed={seed}. Continue anyway.")
+    if seeds is not None:
+        json_seeds = [int(x) for x in data.get("seeds", [])]
+        req_seeds = [int(x) for x in seeds]
+        if json_seeds and sorted(json_seeds) != sorted(req_seeds):
+            print(f"[WARN] hv json seeds={json_seeds}, requested seeds={req_seeds}. Continue anyway.")
+    elif seed is not None:
+        seed_in_json = data.get("seed")
+        if seed_in_json is not None and int(seed_in_json) != int(seed):
+            print(f"[WARN] hv json seed={seed_in_json}, requested seed={seed}. Continue anyway.")
 
     return data
 
 
-def find_def_candidates(run_path):
+def find_def_candidates(run_path, def_per_seed):
     placements_dir = os.path.join(run_path, "placements")
     if not os.path.isdir(placements_dir):
         return []
 
     selected = []
-    for i in range(1, N_DEF_TOP + 1):
+    for i in range(1, int(def_per_seed) + 1):
         gp_def = os.path.join(placements_dir, f"gp_{i}.def")
         base_def = os.path.join(placements_dir, f"{i}.def")
 
@@ -104,6 +154,79 @@ def find_def_candidates(run_path):
             selected.append((i, base_def, False))
 
     return selected
+
+
+def _pick_evenly_spaced(items, budget):
+    if budget <= 0:
+        return []
+    if len(items) <= budget:
+        return list(items)
+
+    picks = []
+    used = set()
+    if budget == 1:
+        return [items[0]]
+
+    for i in range(budget):
+        idx = int(round(i * (len(items) - 1) / (budget - 1)))
+        if idx not in used:
+            picks.append(items[idx])
+            used.add(idx)
+
+    if len(picks) < budget:
+        for i, item in enumerate(items):
+            if i in used:
+                continue
+            picks.append(item)
+            used.add(i)
+            if len(picks) >= budget:
+                break
+    return picks
+
+
+def select_task_candidates(candidates, max_total_defs_per_setting, def_select_strategy):
+    if max_total_defs_per_setting is None or int(max_total_defs_per_setting) <= 0:
+        return candidates
+
+    budget = int(max_total_defs_per_setting)
+    if len(candidates) <= budget:
+        return candidates
+
+    strategy = str(def_select_strategy)
+
+    if strategy == "top_rank":
+        ordered = sorted(candidates, key=lambda x: (x["def_rank"], x["seed"]))
+        return ordered[:budget]
+
+    if strategy == "rank_spread":
+        ordered = sorted(candidates, key=lambda x: (x["def_rank"], x["seed"]))
+        return _pick_evenly_spaced(ordered, budget)
+
+    if strategy == "seed_round_robin":
+        by_seed = {}
+        for c in candidates:
+            by_seed.setdefault(int(c["seed"]), []).append(c)
+        for s in by_seed:
+            by_seed[s] = sorted(by_seed[s], key=lambda x: (x["def_rank"], x["run_path"]))
+
+        picked = []
+        seeds_sorted = sorted(by_seed.keys())
+        rank = 0
+        while len(picked) < budget:
+            any_added = False
+            for s in seeds_sorted:
+                lst = by_seed[s]
+                if rank < len(lst):
+                    picked.append(lst[rank])
+                    any_added = True
+                    if len(picked) >= budget:
+                        break
+            if not any_added:
+                break
+            rank += 1
+        return picked[:budget]
+
+    raise ValueError(f"Unsupported --def_select_strategy={strategy}")
 
 
 def parse_iccad_output(stdout, report_path):
@@ -284,8 +407,19 @@ def parse_case_filters(args):
     return common_cases, case_filters
 
 
-def build_task_plan(hv_summary, selected_benchmarks, selected_formulations, benchmark_case_filters):
+def build_task_plan(
+    hv_summary,
+    selected_benchmarks,
+    selected_formulations,
+    benchmark_case_filters,
+    seeds,
+    workspace_root,
+    def_per_seed,
+    max_total_defs_per_setting,
+    def_select_strategy,
+):
     tasks = []
+    multi_seed = bool(hv_summary.get("multi_seed"))
 
     for benchmark, bench_cfg in BENCHMARKS.items():
         if selected_benchmarks is not None and benchmark not in selected_benchmarks:
@@ -306,32 +440,78 @@ def build_task_plan(hv_summary, selected_benchmarks, selected_formulations, benc
                     continue
 
                 form_data = case_data.get(form, {})
-                best_algo = form_data.get("best_algo")
-                best_hv = form_data.get("best_hv")
-                best_run_path = form_data.get("best_run_path")
+                setting_candidates = []
+                if multi_seed:
+                    best_algo = form_data.get("best_algo_by_mean")
+                    if not best_algo:
+                        continue
 
-                if not best_algo or not best_run_path:
-                    continue
+                    algo_data = form_data.get("algorithms", {}).get(best_algo, {})
+                    hv_stats = algo_data.get("hv_stats") or {}
+                    hv_mean = hv_stats.get("mean")
+                    hv_by_seed = algo_data.get("hv_by_seed") or {}
+                    run_path_by_seed = algo_data.get("run_path_by_seed") or {}
 
-                def_list = find_def_candidates(best_run_path)
-                if not def_list:
-                    continue
+                    for seed in seeds:
+                        run_path = normalize_run_path(workspace_root, run_path_by_seed.get(str(seed)))
+                        if not run_path:
+                            continue
+                        def_list = find_def_candidates(run_path, def_per_seed)
+                        if not def_list:
+                            continue
 
-                for rank, def_path, used_gp in def_list:
-                    tasks.append(
-                        {
-                            "benchmark": benchmark,
-                            "case": case_name,
-                            "formulation": form,
-                            "mode": "GP",
-                            "best_algo": best_algo,
-                            "best_hv": best_hv,
-                            "run_path": best_run_path,
-                            "def_rank": rank,
-                            "def_path": def_path,
-                            "used_gp_def": used_gp,
-                        }
-                    )
+                        for rank, def_path, used_gp in def_list:
+                            setting_candidates.append(
+                                {
+                                    "seed": int(seed),
+                                    "benchmark": benchmark,
+                                    "case": case_name,
+                                    "formulation": form,
+                                    "mode": "GP",
+                                    "best_algo": best_algo,
+                                    "best_hv": hv_by_seed.get(str(seed)),
+                                    "best_hv_mean": hv_mean,
+                                    "run_path": run_path,
+                                    "def_rank": rank,
+                                    "def_path": def_path,
+                                    "used_gp_def": used_gp,
+                                }
+                            )
+                else:
+                    best_algo = form_data.get("best_algo")
+                    best_hv = form_data.get("best_hv")
+                    best_run_path = normalize_run_path(workspace_root, form_data.get("best_run_path"))
+
+                    if not best_algo or not best_run_path:
+                        continue
+
+                    def_list = find_def_candidates(best_run_path, def_per_seed)
+                    if not def_list:
+                        continue
+
+                    for rank, def_path, used_gp in def_list:
+                        setting_candidates.append(
+                            {
+                                "seed": int(seeds[0]),
+                                "benchmark": benchmark,
+                                "case": case_name,
+                                "formulation": form,
+                                "mode": "GP",
+                                "best_algo": best_algo,
+                                "best_hv": best_hv,
+                                "run_path": best_run_path,
+                                "def_rank": rank,
+                                "def_path": def_path,
+                                "used_gp_def": used_gp,
+                            }
+                        )
+
+                selected_candidates = select_task_candidates(
+                    candidates=setting_candidates,
+                    max_total_defs_per_setting=max_total_defs_per_setting,
+                    def_select_strategy=def_select_strategy,
+                )
+                tasks.extend(selected_candidates)
 
     return tasks
 
@@ -340,8 +520,10 @@ def print_plan(tasks, preview_limit, estimate_per_def_min):
     print("\n=== Evaluation Plan ===")
     print(f"Total DEF tasks: {len(tasks)}")
 
-    combo_set = set((t["benchmark"], t["case"], t["formulation"], t["best_algo"]) for t in tasks)
+    combo_set = set((t["seed"], t["benchmark"], t["case"], t["formulation"], t["best_algo"]) for t in tasks)
     print(f"Total benchmark/case/formulation combos: {len(combo_set)}")
+    seed_set = sorted(set(int(t["seed"]) for t in tasks))
+    print(f"Seeds covered: {seed_set}")
 
     if estimate_per_def_min is not None and len(tasks) > 0:
         est_total_min = estimate_per_def_min * len(tasks)
@@ -351,7 +533,7 @@ def print_plan(tasks, preview_limit, estimate_per_def_min):
     for idx, t in enumerate(tasks[:preview_limit], 1):
         gp_flag = "gp" if t["used_gp_def"] else "base"
         print(
-            f"  [{idx}] {t['benchmark']}/{t['case']}/{t['formulation']} "
+            f"  [{idx}] seed={t['seed']} {t['benchmark']}/{t['case']}/{t['formulation']} "
             f"best={t['best_algo']} hv={t['best_hv']} def#{t['def_rank']}({gp_flag})"
         )
     if len(tasks) > preview_limit:
@@ -369,8 +551,14 @@ def main():
         default=os.path.join("results", "analysis_reports", "ppa_eval"),
         help="Base output directory",
     )
-    parser.add_argument("--seed", type=int, required=True, help="Seed to evaluate")
-    parser.add_argument("--hv_json", type=str, default=None, help="Path to hv_summary_seed_<seed>.json")
+    parser.add_argument("--seed", type=int, default=1, help="Seed to evaluate in single-seed mode")
+    parser.add_argument(
+        "--seeds",
+        type=str,
+        default=None,
+        help="Comma-separated seeds for multi-seed evaluation, e.g. 1,2,3",
+    )
+    parser.add_argument("--hv_json", type=str, default=None, help="Path to hv_summary_seed_<seed>.json or hv_summary_seeds_<...>.json")
     parser.add_argument("--platform", type=str, default="nangate45", help="OpenROAD platform")
     parser.add_argument("--variant", type=str, default="xp", help="OpenROAD flow variant")
 
@@ -381,6 +569,25 @@ def main():
     parser.add_argument("--formulations", type=str, default="all", help="all or comma list: MGO,HPO")
 
     parser.add_argument("--preview_limit", type=int, default=30, help="How many planned tasks to print")
+    parser.add_argument(
+        "--def_per_seed",
+        type=int,
+        default=DEFAULT_DEF_PER_SEED,
+        help="Number of top DEF candidates per seed to consider before cross-seed selection",
+    )
+    parser.add_argument(
+        "--max_total_defs_per_setting",
+        type=int,
+        default=0,
+        help="Cross-seed DEF budget per (benchmark,case,formulation); 0 means keep all candidates",
+    )
+    parser.add_argument(
+        "--def_select_strategy",
+        type=str,
+        default="seed_round_robin",
+        choices=["seed_round_robin", "top_rank", "rank_spread"],
+        help="Strategy when max_total_defs_per_setting is enabled",
+    )
     parser.add_argument("--estimate_per_def_min", type=float, default=None, help="Optional ETA estimate per DEF")
     parser.add_argument("--dry_run", action="store_true", help="Only print/save plan, do not execute evaluation")
     parser.add_argument("--confirm", action="store_true", help="Ask confirmation before execution")
@@ -389,10 +596,18 @@ def main():
 
     workspace_root = os.path.abspath(args.workspace)
     base_output_dir = os.path.abspath(args.output)
-    output_dir = os.path.join(base_output_dir, f"seed_{args.seed}")
+    seeds = [int(args.seed)] if args.seeds is None else parse_seeds(args.seeds)
+    multi_seed = len(seeds) > 1
+    if multi_seed:
+        output_dir = os.path.join(base_output_dir, f"seeds_{seed_tag(seeds)}")
+    else:
+        output_dir = os.path.join(base_output_dir, f"seed_{seeds[0]}")
     os.makedirs(output_dir, exist_ok=True)
 
-    hv_json = os.path.abspath(args.hv_json) if args.hv_json else find_default_hv_json(workspace_root, base_output_dir, args.seed)
+    if args.hv_json:
+        hv_json = os.path.abspath(args.hv_json)
+    else:
+        hv_json = find_default_hv_json_multi(workspace_root, base_output_dir, seeds) if multi_seed else find_default_hv_json(workspace_root, base_output_dir, seeds[0])
     if not os.path.exists(hv_json):
         raise FileNotFoundError(f"HV summary json not found: {hv_json}")
 
@@ -400,18 +615,37 @@ def main():
     selected_formulations = parse_csv_or_all(args.formulations, valid_values=FORMULATIONS)
     common_cases_filter, benchmark_case_filters = parse_case_filters(args)
 
-    hv_summary = load_hv_summary(hv_json, args.seed)
-    tasks = build_task_plan(hv_summary, selected_benchmarks, selected_formulations, benchmark_case_filters)
+    hv_summary = load_hv_summary(hv_json, seed=seeds[0], seeds=seeds if multi_seed else None)
+    max_total_defs = None if int(args.max_total_defs_per_setting) <= 0 else int(args.max_total_defs_per_setting)
+    tasks = build_task_plan(
+        hv_summary,
+        selected_benchmarks,
+        selected_formulations,
+        benchmark_case_filters,
+        seeds,
+        workspace_root,
+        args.def_per_seed,
+        max_total_defs,
+        args.def_select_strategy,
+    )
 
-    plan_out = os.path.join(output_dir, f"ppa_eval_seed_{args.seed}_gp_best_plan.json")
+    if multi_seed:
+        plan_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best_plan.json")
+    else:
+        plan_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best_plan.json")
     with open(plan_out, "w") as f:
         json.dump(
             {
-                "seed": int(args.seed),
+                "seed": int(seeds[0]),
+                "seeds": [int(s) for s in seeds],
+                "multi_seed": bool(multi_seed),
                 "generated_at": datetime.now().isoformat(),
                 "hv_json": hv_json,
                 "platform": args.platform,
                 "variant": args.variant,
+                "def_per_seed": int(args.def_per_seed),
+                "max_total_defs_per_setting": int(args.max_total_defs_per_setting),
+                "def_select_strategy": args.def_select_strategy,
                 "benchmarks_filter": args.benchmarks,
                 "cases_filter": args.cases,
                 "iccad_cases_filter": args.iccad_cases,
@@ -474,7 +708,7 @@ def main():
         row = dict(task)
         row.update(
             {
-                "seed": int(args.seed),
+                "seed": int(task.get("seed", seeds[0])),
                 "eval_ok": metrics is not None and return_code == 0,
                 "return_code": return_code,
                 "duration_sec": duration,
@@ -510,7 +744,9 @@ def main():
         print(f"[PROGRESS] done={idx}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
 
     final = {
-        "seed": int(args.seed),
+        "seed": int(seeds[0]),
+        "seeds": [int(s) for s in seeds],
+        "multi_seed": bool(multi_seed),
         "generated_at": datetime.now().isoformat(),
         "hv_json": hv_json,
         "platform": args.platform,
@@ -519,12 +755,27 @@ def main():
         "rows": result_rows,
     }
 
-    json_out = os.path.join(output_dir, f"ppa_eval_seed_{args.seed}_gp_best.json")
+    if multi_seed:
+        json_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.json")
+    else:
+        json_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.json")
     with open(json_out, "w") as f:
         json.dump(final, f, indent=2)
 
-    csv_out = os.path.join(output_dir, f"ppa_eval_seed_{args.seed}_gp_best.csv")
-    pd.DataFrame(result_rows).to_csv(csv_out, index=False)
+    result_df = pd.DataFrame(result_rows)
+    if multi_seed:
+        csv_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.csv")
+    else:
+        csv_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.csv")
+    result_df.to_csv(csv_out, index=False)
+
+    if multi_seed and not result_df.empty:
+        for seed in seeds:
+            sub = result_df[result_df["seed"] == int(seed)].copy()
+            if sub.empty:
+                continue
+            seed_out = os.path.join(output_dir, f"ppa_eval_seed_{int(seed)}_gp_best.csv")
+            sub.to_csv(seed_out, index=False)
 
     ok_count = sum(1 for r in result_rows if r.get("eval_ok"))
     print(f"\nSaved PPA JSON: {json_out}")
