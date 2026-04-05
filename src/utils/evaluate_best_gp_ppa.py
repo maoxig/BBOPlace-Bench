@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -584,6 +585,38 @@ def print_result_row(row, benchmark):
         print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
 
 
+def _clear_live_line():
+    if sys.stdout.isatty():
+        sys.stdout.write("\r\x1b[2K")
+
+
+def _truncate_text(text, width):
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width <= 3:
+        return text[:width]
+    return text[: width - 3] + "..."
+
+
+def print_live_status(line):
+    if not sys.stdout.isatty():
+        return
+    cols = shutil.get_terminal_size((120, 20)).columns
+    _clear_live_line()
+    sys.stdout.write(_truncate_text(line, max(20, cols - 1)))
+    sys.stdout.flush()
+
+
+def print_log_line(line, compact=False):
+    if compact and sys.stdout.isatty():
+        _clear_live_line()
+        print(line)
+        return
+    print(line)
+
+
 def build_task_plan(
     hv_summary,
     selected_benchmarks,
@@ -777,6 +810,14 @@ def main():
     parser.add_argument("--dry_run", action="store_true", help="Only print/save plan, do not execute evaluation")
     parser.add_argument("--confirm", action="store_true", help="Ask confirmation before execution")
     parser.add_argument("--timeout_sec", type=int, default=0, help="Timeout per DEF subprocess (0 for no timeout)")
+    parser.add_argument(
+        "--progress_style",
+        type=str,
+        default="auto",
+        choices=["auto", "compact", "plain"],
+        help="Progress rendering style: auto chooses compact for TTY, plain otherwise",
+    )
+    parser.add_argument("--heartbeat_sec", type=float, default=10.0, help="Heartbeat interval in seconds")
     args = parser.parse_args()
 
     workspace_root = os.path.abspath(args.workspace)
@@ -875,6 +916,12 @@ def main():
     workers = max(1, int(args.jobs))
     print(f"[INFO] Evaluation workers: {workers}")
     print(f"[INFO] Evaluation session: {session_tag}")
+    if args.progress_style == "plain":
+        compact_progress = False
+    elif args.progress_style == "compact":
+        compact_progress = bool(sys.stdout.isatty())
+    else:
+        compact_progress = bool(sys.stdout.isatty())
 
     try:
         if workers == 1:
@@ -895,6 +942,7 @@ def main():
         else:
             ex = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
             interrupted = False
+            live_active = False
             try:
                 future_to_task = {
                     ex.submit(
@@ -909,14 +957,20 @@ def main():
                     ): t
                     for t in tasks
                 }
-                for idx, t in enumerate(tasks, 1):
-                    print(
-                        f"[SUBMIT {idx}/{len(tasks)}] seed={t['seed']} {t['benchmark']}/{t['case']}/{t['formulation']} "
-                        f"def#{t['def_rank']}"
+                if compact_progress:
+                    print_log_line(
+                        f"[INFO] Submitted {len(tasks)} tasks to {workers} workers (compact live progress enabled)",
+                        compact=True,
                     )
+                else:
+                    for idx, t in enumerate(tasks, 1):
+                        print(
+                            f"[SUBMIT {idx}/{len(tasks)}] seed={t['seed']} {t['benchmark']}/{t['case']}/{t['formulation']} "
+                            f"def#{t['def_rank']}"
+                        )
                 done = 0
                 pending = set(future_to_task.keys())
-                heartbeat_sec = 10.0
+                heartbeat_sec = max(1.0, float(args.heartbeat_sec))
                 while pending:
                     completed, pending = concurrent.futures.wait(
                         pending,
@@ -927,18 +981,28 @@ def main():
                     if not completed:
                         running = snapshot_running_tasks()
                         elapsed = time.time() - run_start
-                        print(
-                            f"[HEARTBEAT] done={done}/{len(tasks)} running={len(running)} "
-                            f"elapsed={elapsed/60:.1f}m"
-                        )
-                        if running:
-                            sample = sorted(
-                                running.values(),
-                                key=lambda x: float(x.get("start", 0.0)),
-                            )[: min(3, len(running))]
-                            for x in sample:
-                                age = time.time() - float(x.get("start", time.time()))
-                                print(f"  [RUNNING] {x.get('text')} age={age:.0f}s")
+                        if compact_progress:
+                            eta_str = "n/a" if done == 0 else f"{(elapsed / done) * (len(tasks) - done) / 60:.1f}m"
+                            msg = f"[LIVE] done={done}/{len(tasks)} running={len(running)} elapsed={elapsed/60:.1f}m eta={eta_str}"
+                            if running:
+                                oldest = min(running.values(), key=lambda x: float(x.get("start", time.time())))
+                                age = time.time() - float(oldest.get("start", time.time()))
+                                msg += f" | {oldest.get('text')} age={age:.0f}s"
+                            print_live_status(msg)
+                            live_active = True
+                        else:
+                            print(
+                                f"[HEARTBEAT] done={done}/{len(tasks)} running={len(running)} "
+                                f"elapsed={elapsed/60:.1f}m"
+                            )
+                            if running:
+                                sample = sorted(
+                                    running.values(),
+                                    key=lambda x: float(x.get("start", 0.0)),
+                                )[: min(3, len(running))]
+                                for x in sample:
+                                    age = time.time() - float(x.get("start", time.time()))
+                                    print(f"  [RUNNING] {x.get('text')} age={age:.0f}s")
                         continue
 
                     for fut in completed:
@@ -960,6 +1024,11 @@ def main():
                             )
                         result_rows.append(row)
 
+                        if compact_progress and live_active:
+                            _clear_live_line()
+                            sys.stdout.flush()
+                            live_active = False
+
                         print(
                             f"\n[DONE {done}/{len(tasks)}] seed={task['seed']} {task['benchmark']}/{task['case']}/{task['formulation']} "
                             f"def#{task['def_rank']} ok={row.get('eval_ok')}"
@@ -970,8 +1039,14 @@ def main():
                         avg = elapsed / done
                         remaining = avg * (len(tasks) - done)
                         print(f"[PROGRESS] done={done}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
+                if compact_progress and live_active:
+                    _clear_live_line()
+                    sys.stdout.flush()
             except KeyboardInterrupt:
                 interrupted = True
+                if compact_progress and live_active:
+                    _clear_live_line()
+                    sys.stdout.flush()
                 print("\n[WARN] KeyboardInterrupt received. Terminating active worker subprocesses...")
                 terminate_active_processes(signal.SIGTERM)
                 time.sleep(0.5)
