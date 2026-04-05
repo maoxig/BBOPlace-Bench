@@ -102,6 +102,30 @@ def seed_synth_artifacts(orfs_root, flow_work_home, platform, output_design, var
         return False
 
 
+def mark_isolated_workdir(flow_work_home):
+    marker = os.path.join(flow_work_home, ".orfs_eval_isolated")
+    try:
+        with open(marker, "w") as f:
+            f.write("isolated_orfs_eval_workdir\n")
+    except Exception:
+        pass
+
+
+def cleanup_flow_work_home(flow_work_home):
+    marker = os.path.join(flow_work_home, ".orfs_eval_isolated")
+    if not os.path.exists(marker):
+        print(f"Warning: skip cleanup because marker is missing: {flow_work_home}")
+        return
+
+    for name in ["logs", "objects", "reports", "results"]:
+        p = os.path.join(flow_work_home, name)
+        if os.path.isdir(p):
+            try:
+                shutil.rmtree(p, ignore_errors=True)
+            except Exception:
+                pass
+
+
 def discover_design_meta(orfs_root, platform):
     """
     Scan designs/<platform>/*/<config>.mk and return metadata entries.
@@ -269,7 +293,7 @@ def parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform
 
     return metrics
 
-def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, flow_work_home=None, resolve_only=False):
+def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, flow_work_home=None, cleanup_flow_work="success", resolve_only=False):
     start_time = time.time()
     orfs_root = get_orfs_root(root_dir)
     if not os.path.exists(orfs_root):
@@ -295,6 +319,7 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, flow
         flow_work_home = os.path.join(work_dir, "orfs_work")
     flow_work_home = os.path.abspath(flow_work_home)
     os.makedirs(flow_work_home, exist_ok=True)
+    mark_isolated_workdir(flow_work_home)
 
     print(f"Evaluating {design} ({platform}) using Make flow...")
     print(f"Resolved design: dir={config_design}, DESIGN_NAME={design_name}, DESIGN_NICKNAME={output_design}")
@@ -442,8 +467,13 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, flow
                     for k, v in metrics.items():
                         rf.write(f"{k}: {v}\n")
                 print(f"Report saved to {report_file}")
+
+                if cleanup_flow_work in {"success", "always"}:
+                    cleanup_flow_work_home(flow_work_home)
             else:
                 print("Warning: No metrics parsed from log.")
+                if cleanup_flow_work == "always":
+                    cleanup_flow_work_home(flow_work_home)
                 
             return metrics
 
@@ -459,6 +489,12 @@ def main():
     parser.add_argument("--variant", default="eval", help="Flow Variant Name (default: eval)")
     parser.add_argument("--work_dir", default=None, help="Working Directory for logs/reports")
     parser.add_argument("--flow_work_home", default=None, help="Isolated ORFS WORK_HOME for this evaluation")
+    parser.add_argument(
+        "--cleanup_flow_work",
+        default="success",
+        choices=["never", "success", "always"],
+        help="Cleanup isolated ORFS intermediates in flow_work_home",
+    )
     parser.add_argument("--resolve_only", action="store_true", help="Only resolve design mapping, do not run make")
     
     args = parser.parse_args()
@@ -484,6 +520,7 @@ def main():
         work_dir,
         root_dir,
         flow_work_home=args.flow_work_home,
+        cleanup_flow_work=args.cleanup_flow_work,
         resolve_only=args.resolve_only,
     )
     if not result:

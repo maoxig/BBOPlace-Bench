@@ -357,6 +357,7 @@ def evaluate_one_def_subprocess(
     variant,
     eval_base_dir,
     timeout_sec,
+    cleanup_flow_work,
 ):
     start = time.time()
 
@@ -390,6 +391,8 @@ def evaluate_one_def_subprocess(
             work_dir,
             "--flow_work_home",
             os.path.join(work_dir, "orfs_work"),
+            "--cleanup_flow_work",
+            cleanup_flow_work,
         ]
     else:
         return None, "unsupported benchmark", -1, 0.0
@@ -436,6 +439,8 @@ def evaluate_one_def_subprocess(
     err_text = ""
     if return_code != 0:
         err_text = (stderr.strip() or stdout.strip())[-800:]
+    elif metrics is None:
+        err_text = "no metrics parsed from this run"
 
     return metrics, err_text, return_code, duration
 
@@ -467,7 +472,7 @@ def parse_case_filters(args):
     return common_cases, case_filters
 
 
-def run_single_task(task, workspace_root, platform, variant, timeout_sec, session_tag):
+def run_single_task(task, workspace_root, platform, variant, timeout_sec, session_tag, cleanup_flow_work):
     eval_base_dir = os.path.join(task["run_path"], "ppa_eval", session_tag)
     os.makedirs(eval_base_dir, exist_ok=True)
     task_variant = build_task_variant(task, variant)
@@ -481,6 +486,7 @@ def run_single_task(task, workspace_root, platform, variant, timeout_sec, sessio
         variant=task_variant,
         eval_base_dir=eval_base_dir,
         timeout_sec=timeout_sec,
+        cleanup_flow_work=cleanup_flow_work,
     )
 
     row = dict(task)
@@ -684,6 +690,13 @@ def main():
         help="Strategy when max_total_defs_per_setting is enabled",
     )
     parser.add_argument("--estimate_per_def_min", type=float, default=None, help="Optional ETA estimate per DEF")
+    parser.add_argument(
+        "--cleanup_flow_work",
+        type=str,
+        default="success",
+        choices=["never", "success", "always"],
+        help="Cleanup isolated ORFS work dirs to reduce disk usage",
+    )
     parser.add_argument("--dry_run", action="store_true", help="Only print/save plan, do not execute evaluation")
     parser.add_argument("--confirm", action="store_true", help="Ask confirmation before execution")
     parser.add_argument("--timeout_sec", type=int, default=0, help="Timeout per DEF subprocess (0 for no timeout)")
@@ -741,6 +754,7 @@ def main():
                 "def_per_seed": int(args.def_per_seed),
                 "max_total_defs_per_setting": int(args.max_total_defs_per_setting),
                 "def_select_strategy": args.def_select_strategy,
+                "cleanup_flow_work": args.cleanup_flow_work,
                 "benchmarks_filter": args.benchmarks,
                 "cases_filter": args.cases,
                 "iccad_cases_filter": args.iccad_cases,
@@ -793,7 +807,7 @@ def main():
                     f"algo={task['best_algo']} def#{task['def_rank']}"
                 )
 
-                row = run_single_task(task, workspace_root, args.platform, args.variant, timeout_sec, session_tag)
+                row = run_single_task(task, workspace_root, args.platform, args.variant, timeout_sec, session_tag, args.cleanup_flow_work)
                 result_rows.append(row)
 
                 if row.get("eval_ok"):
@@ -820,9 +834,20 @@ def main():
                 print(f"[PROGRESS] done={idx}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
         else:
             ex = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+            interrupted = False
             try:
                 future_to_task = {
-                    ex.submit(run_single_task, t, workspace_root, args.platform, args.variant, timeout_sec, session_tag): t for t in tasks
+                    ex.submit(
+                        run_single_task,
+                        t,
+                        workspace_root,
+                        args.platform,
+                        args.variant,
+                        timeout_sec,
+                        session_tag,
+                        args.cleanup_flow_work,
+                    ): t
+                    for t in tasks
                 }
                 done = 0
                 for fut in concurrent.futures.as_completed(future_to_task):
@@ -855,8 +880,17 @@ def main():
                     avg = elapsed / done
                     remaining = avg * (len(tasks) - done)
                     print(f"[PROGRESS] done={done}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
+            except KeyboardInterrupt:
+                interrupted = True
+                print("\n[WARN] KeyboardInterrupt received. Terminating active worker subprocesses...")
+                terminate_active_processes(signal.SIGTERM)
+                time.sleep(0.5)
+                terminate_active_processes(signal.SIGKILL)
+                ex.shutdown(wait=False, cancel_futures=True)
+                raise SystemExit(130)
             finally:
-                ex.shutdown(wait=True, cancel_futures=False)
+                if not interrupted:
+                    ex.shutdown(wait=True, cancel_futures=False)
     except KeyboardInterrupt:
         print("\n[WARN] KeyboardInterrupt received. Terminating active worker subprocesses...")
         terminate_active_processes(signal.SIGTERM)
