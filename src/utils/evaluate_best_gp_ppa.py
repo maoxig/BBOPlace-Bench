@@ -1,9 +1,13 @@
 import argparse
+import concurrent.futures
+import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 
@@ -41,6 +45,31 @@ BENCHMARKS = {
 
 FORMULATIONS = ["MGO", "HPO"]
 DEFAULT_DEF_PER_SEED = 5
+
+
+ACTIVE_PROCS = set()
+ACTIVE_PROCS_LOCK = threading.Lock()
+
+
+def register_proc(proc):
+    with ACTIVE_PROCS_LOCK:
+        ACTIVE_PROCS.add(proc)
+
+
+def unregister_proc(proc):
+    with ACTIVE_PROCS_LOCK:
+        ACTIVE_PROCS.discard(proc)
+
+
+def terminate_active_processes(sig=signal.SIGTERM):
+    with ACTIVE_PROCS_LOCK:
+        procs = list(ACTIVE_PROCS)
+    for p in procs:
+        try:
+            if p.poll() is None:
+                os.killpg(p.pid, sig)
+        except Exception:
+            pass
 
 
 def parse_seeds(seed_text):
@@ -268,11 +297,17 @@ def parse_iccad_output(stdout, report_path):
     return metrics if metrics else None
 
 
-def parse_openroad_output(stdout, work_dir):
+def parse_openroad_output(stdout, work_dir, min_mtime=None):
     metrics = {}
     metrics_file = os.path.join(work_dir, "metrics.txt")
 
     if os.path.exists(metrics_file):
+        if min_mtime is not None:
+            try:
+                if os.path.getmtime(metrics_file) < float(min_mtime):
+                    return None
+            except Exception:
+                pass
         try:
             with open(metrics_file, "r") as f:
                 for line in f:
@@ -307,6 +342,12 @@ def parse_openroad_output(stdout, work_dir):
     return metrics if metrics else None
 
 
+def build_task_variant(task, base_variant):
+    key = f"{task.get('seed')}|{task.get('benchmark')}|{task.get('case')}|{task.get('formulation')}|{task.get('def_path')}"
+    h = hashlib.md5(key.encode("utf-8")).hexdigest()[:8]
+    return f"{base_variant}_s{int(task.get('seed', 0))}_r{int(task.get('def_rank', 0))}_{h}"
+
+
 def evaluate_one_def_subprocess(
     benchmark,
     case_name,
@@ -321,7 +362,7 @@ def evaluate_one_def_subprocess(
 
     if benchmark == "ICCAD2015":
         cmd = [
-            "python",
+            sys.executable,
             os.path.join(workspace_root, "src", "utils", "iccad2015_evaluator.py"),
             "--def_path",
             def_path,
@@ -335,7 +376,7 @@ def evaluate_one_def_subprocess(
         work_dir = os.path.join(eval_base_dir, os.path.basename(def_path).replace(".def", ""))
         os.makedirs(work_dir, exist_ok=True)
         cmd = [
-            "python",
+            sys.executable,
             os.path.join(workspace_root, "src", "utils", "openroad_evaluator.py"),
             "--def_path",
             def_path,
@@ -347,37 +388,56 @@ def evaluate_one_def_subprocess(
             variant,
             "--work_dir",
             work_dir,
+            "--flow_work_home",
+            os.path.join(work_dir, "orfs_work"),
         ]
     else:
         return None, "unsupported benchmark", -1, 0.0
 
+    proc = None
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=workspace_root,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout_sec,
-            check=False,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
-        return None, "timeout", -9, time.time() - start
+        register_proc(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except Exception:
+                pass
+            return None, "timeout", -9, time.time() - start
+        except KeyboardInterrupt:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except Exception:
+                pass
+            raise
+    finally:
+        if proc is not None:
+            unregister_proc(proc)
 
     duration = time.time() - start
-    stdout = proc.stdout or ""
-    stderr = proc.stderr or ""
+    stdout = stdout or ""
+    stderr = stderr or ""
+    return_code = proc.returncode if proc is not None else -1
 
     if benchmark == "ICCAD2015":
         metrics = parse_iccad_output(stdout, report_path)
     else:
-        metrics = parse_openroad_output(stdout, work_dir)
+        metrics = parse_openroad_output(stdout, work_dir, min_mtime=start)
 
     err_text = ""
-    if proc.returncode != 0:
+    if return_code != 0:
         err_text = (stderr.strip() or stdout.strip())[-800:]
 
-    return metrics, err_text, proc.returncode, duration
+    return metrics, err_text, return_code, duration
 
 
 def parse_case_filters(args):
@@ -405,6 +465,40 @@ def parse_case_filters(args):
                 case_filters[bench] = sorted(set(current_cases).intersection(bench_common))
 
     return common_cases, case_filters
+
+
+def run_single_task(task, workspace_root, platform, variant, timeout_sec, session_tag):
+    eval_base_dir = os.path.join(task["run_path"], "ppa_eval", session_tag)
+    os.makedirs(eval_base_dir, exist_ok=True)
+    task_variant = build_task_variant(task, variant)
+
+    metrics, err_text, return_code, duration = evaluate_one_def_subprocess(
+        benchmark=task["benchmark"],
+        case_name=task["case"],
+        def_path=task["def_path"],
+        workspace_root=workspace_root,
+        platform=platform,
+        variant=task_variant,
+        eval_base_dir=eval_base_dir,
+        timeout_sec=timeout_sec,
+    )
+
+    row = dict(task)
+    row.update(
+        {
+            "seed": int(task.get("seed", 0)),
+            "eval_ok": metrics is not None and return_code == 0,
+            "return_code": return_code,
+            "duration_sec": duration,
+            "error": err_text,
+            "flow_variant": task_variant,
+            "eval_session": session_tag,
+        }
+    )
+    if metrics:
+        row.update(metrics)
+
+    return row
 
 
 def build_task_plan(
@@ -560,7 +654,7 @@ def main():
     )
     parser.add_argument("--hv_json", type=str, default=None, help="Path to hv_summary_seed_<seed>.json or hv_summary_seeds_<...>.json")
     parser.add_argument("--platform", type=str, default="nangate45", help="OpenROAD platform")
-    parser.add_argument("--variant", type=str, default="xp", help="OpenROAD flow variant")
+    parser.add_argument("--variant", type=str, default="eval", help="OpenROAD flow variant")
 
     parser.add_argument("--benchmarks", type=str, default="all", help="all or comma list: ICCAD2015,OpenROAD")
     parser.add_argument("--cases", type=str, default="all", help="Global case filter (all benchmarks)")
@@ -569,6 +663,7 @@ def main():
     parser.add_argument("--formulations", type=str, default="all", help="all or comma list: MGO,HPO")
 
     parser.add_argument("--preview_limit", type=int, default=30, help="How many planned tasks to print")
+    parser.add_argument("--jobs", type=int, default=1, help="Parallel worker count for PPA evaluation")
     parser.add_argument(
         "--def_per_seed",
         type=int,
@@ -684,64 +779,90 @@ def main():
     timeout_sec = None if args.timeout_sec <= 0 else args.timeout_sec
     result_rows = []
     run_start = time.time()
+    session_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    for idx, task in enumerate(tasks, 1):
-        eval_base_dir = os.path.join(task["run_path"], "ppa_eval")
-        os.makedirs(eval_base_dir, exist_ok=True)
+    workers = max(1, int(args.jobs))
+    print(f"[INFO] Evaluation workers: {workers}")
+    print(f"[INFO] Evaluation session: {session_tag}")
 
-        print(
-            f"\n[RUN {idx}/{len(tasks)}] {task['benchmark']}/{task['case']}/{task['formulation']} "
-            f"algo={task['best_algo']} def#{task['def_rank']}"
-        )
-
-        metrics, err_text, return_code, duration = evaluate_one_def_subprocess(
-            benchmark=task["benchmark"],
-            case_name=task["case"],
-            def_path=task["def_path"],
-            workspace_root=workspace_root,
-            platform=args.platform,
-            variant=args.variant,
-            eval_base_dir=eval_base_dir,
-            timeout_sec=timeout_sec,
-        )
-
-        row = dict(task)
-        row.update(
-            {
-                "seed": int(task.get("seed", seeds[0])),
-                "eval_ok": metrics is not None and return_code == 0,
-                "return_code": return_code,
-                "duration_sec": duration,
-                "error": err_text,
-            }
-        )
-        if metrics:
-            row.update(metrics)
-
-        result_rows.append(row)
-
-        if row.get("eval_ok"):
-            if task["benchmark"] == "ICCAD2015":
+    try:
+        if workers == 1:
+            for idx, task in enumerate(tasks, 1):
                 print(
-                    "[RESULT] "
-                    f"n_tns={row.get('n_tns')} "
-                    f"n_wns={row.get('n_wns')} "
-                    f"runtime_sec={row.get('runtime_sec', row.get('duration_sec')):.2f}"
+                    f"\n[RUN {idx}/{len(tasks)}] {task['benchmark']}/{task['case']}/{task['formulation']} "
+                    f"algo={task['best_algo']} def#{task['def_rank']}"
                 )
-            else:
-                print(
-                    "[RESULT] "
-                    f"WNS={row.get('WNS')} TNS={row.get('TNS')} "
-                    f"GRT_WL={row.get('GRT_WL')} DRT_WL={row.get('DRT_WL')} "
-                    f"runtime_sec={row.get('runtime', row.get('duration_sec')):.2f}"
-                )
+
+                row = run_single_task(task, workspace_root, args.platform, args.variant, timeout_sec, session_tag)
+                result_rows.append(row)
+
+                if row.get("eval_ok"):
+                    if task["benchmark"] == "ICCAD2015":
+                        print(
+                            "[RESULT] "
+                            f"n_tns={row.get('n_tns')} "
+                            f"n_wns={row.get('n_wns')} "
+                            f"runtime_sec={row.get('runtime_sec', row.get('duration_sec')):.2f}"
+                        )
+                    else:
+                        print(
+                            "[RESULT] "
+                            f"WNS={row.get('WNS')} TNS={row.get('TNS')} "
+                            f"GRT_WL={row.get('GRT_WL')} DRT_WL={row.get('DRT_WL')} "
+                            f"runtime_sec={row.get('runtime', row.get('duration_sec')):.2f}"
+                        )
+                else:
+                    print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
+
+                elapsed = time.time() - run_start
+                avg = elapsed / idx
+                remaining = avg * (len(tasks) - idx)
+                print(f"[PROGRESS] done={idx}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
         else:
-            print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
+            ex = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+            try:
+                future_to_task = {
+                    ex.submit(run_single_task, t, workspace_root, args.platform, args.variant, timeout_sec, session_tag): t for t in tasks
+                }
+                done = 0
+                for fut in concurrent.futures.as_completed(future_to_task):
+                    task = future_to_task[fut]
+                    done += 1
+                    try:
+                        row = fut.result()
+                    except Exception as e:
+                        row = dict(task)
+                        row.update(
+                            {
+                                "seed": int(task.get("seed", seeds[0])),
+                                "eval_ok": False,
+                                "return_code": -1,
+                                "duration_sec": 0.0,
+                                "error": f"internal exception: {e}",
+                                "eval_session": session_tag,
+                            }
+                        )
+                    result_rows.append(row)
 
-        elapsed = time.time() - run_start
-        avg = elapsed / idx
-        remaining = avg * (len(tasks) - idx)
-        print(f"[PROGRESS] done={idx}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
+                    print(
+                        f"\n[DONE {done}/{len(tasks)}] seed={task['seed']} {task['benchmark']}/{task['case']}/{task['formulation']} "
+                        f"def#{task['def_rank']} ok={row.get('eval_ok')}"
+                    )
+                    if not row.get("eval_ok"):
+                        print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
+
+                    elapsed = time.time() - run_start
+                    avg = elapsed / done
+                    remaining = avg * (len(tasks) - done)
+                    print(f"[PROGRESS] done={done}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
+            finally:
+                ex.shutdown(wait=True, cancel_futures=False)
+    except KeyboardInterrupt:
+        print("\n[WARN] KeyboardInterrupt received. Terminating active worker subprocesses...")
+        terminate_active_processes(signal.SIGTERM)
+        time.sleep(0.5)
+        terminate_active_processes(signal.SIGKILL)
+        raise SystemExit(130)
 
     final = {
         "seed": int(seeds[0]),

@@ -4,6 +4,8 @@ import argparse
 import subprocess
 import re
 import time
+import glob
+import shutil
 
 def get_project_root():
     """
@@ -15,6 +17,20 @@ def get_project_root():
 
 def get_orfs_root(root_dir):
     return os.path.join(root_dir, "thirdparty", "OpenROAD-flow-scripts")
+
+
+def pick_design_config_file(design_dir):
+    candidates = [
+        "config_eval.mk",
+        "config_flow.mk",
+        "config.mk",
+        "config_xp.mk",
+    ]
+    for name in candidates:
+        p = os.path.join(design_dir, name)
+        if os.path.isfile(p):
+            return p
+    return None
 
 
 def parse_config_exports(config_path):
@@ -31,9 +47,64 @@ def parse_config_exports(config_path):
     return exports
 
 
+def find_synth_seed_dir(orfs_root, platform, output_design, preferred_variant=None):
+    base = os.path.join(orfs_root, "results", platform, output_design)
+    if not os.path.isdir(base):
+        return None
+
+    candidates = []
+    if preferred_variant:
+        candidates.append(preferred_variant)
+    candidates.extend(["eval", "xp", "base"])
+
+    seen = set()
+    ordered = []
+    for c in candidates:
+        if c and c not in seen:
+            seen.add(c)
+            ordered.append(c)
+
+    for v in ordered:
+        p = os.path.join(base, v)
+        if os.path.isdir(p):
+            if os.path.exists(os.path.join(p, "1_synth.v")) and os.path.exists(os.path.join(p, "1_synth.sdc")):
+                return p
+
+    # Fallback: any variant that has synthesis artifacts.
+    for p in sorted(glob.glob(os.path.join(base, "*"))):
+        if os.path.isdir(p):
+            if os.path.exists(os.path.join(p, "1_synth.v")) and os.path.exists(os.path.join(p, "1_synth.sdc")):
+                return p
+
+    return None
+
+
+def seed_synth_artifacts(orfs_root, flow_work_home, platform, output_design, variant):
+    dst_dir = os.path.join(flow_work_home, "results", platform, output_design, variant)
+    os.makedirs(dst_dir, exist_ok=True)
+
+    dst_v = os.path.join(dst_dir, "1_synth.v")
+    dst_sdc = os.path.join(dst_dir, "1_synth.sdc")
+    if os.path.exists(dst_v) and os.path.exists(dst_sdc):
+        return True
+
+    seed_dir = find_synth_seed_dir(orfs_root, platform, output_design, preferred_variant=variant)
+    if not seed_dir:
+        return False
+
+    src_v = os.path.join(seed_dir, "1_synth.v")
+    src_sdc = os.path.join(seed_dir, "1_synth.sdc")
+    try:
+        shutil.copy2(src_v, dst_v)
+        shutil.copy2(src_sdc, dst_sdc)
+        return True
+    except Exception:
+        return False
+
+
 def discover_design_meta(orfs_root, platform):
     """
-    Scan designs/<platform>/*/config_xp.mk and return metadata entries.
+    Scan designs/<platform>/*/<config>.mk and return metadata entries.
     """
     base = os.path.join(orfs_root, "designs", platform)
     metas = []
@@ -41,14 +112,16 @@ def discover_design_meta(orfs_root, platform):
         return metas
 
     for d in os.listdir(base):
-        cfg = os.path.join(base, d, "config_xp.mk")
-        if not os.path.isfile(cfg):
+        design_dir = os.path.join(base, d)
+        cfg = pick_design_config_file(design_dir)
+        if not cfg:
             continue
         exports = parse_config_exports(cfg)
         metas.append(
             {
                 "dir_name": d,
                 "config_path": cfg,
+                "config_file": os.path.basename(cfg),
                 "design_name": exports.get("DESIGN_NAME", d),
                 "design_nickname": exports.get("DESIGN_NICKNAME", d),
             }
@@ -87,7 +160,7 @@ def resolve_design(orfs_root, platform, design_input):
     return None
 
 
-def parse_metrics_from_files(stdout_content, orfs_root, platform, output_design, variant):
+def parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform, output_design, variant):
     """
     Parse the OpenROAD logs and reports to extract metrics.
     Prioritizes reading from generated report/log files. Fallbacks to stdout if needed.
@@ -100,8 +173,9 @@ def parse_metrics_from_files(stdout_content, orfs_root, platform, output_design,
         "Power": None
     }  # type: dict[str, float | None]
     
-    report_dir = os.path.join(orfs_root, "reports", platform, output_design, variant)
-    log_dir = os.path.join(orfs_root, "logs", platform, output_design, variant)
+    base = flow_work_home if flow_work_home else orfs_root
+    report_dir = os.path.join(base, "reports", platform, output_design, variant)
+    log_dir = os.path.join(base, "logs", platform, output_design, variant)
     
     finish_rpt_path = os.path.join(report_dir, "6_finish.rpt")
     grt_log_path = os.path.join(log_dir, "5_1_grt.log")
@@ -195,7 +269,7 @@ def parse_metrics_from_files(stdout_content, orfs_root, platform, output_design,
 
     return metrics
 
-def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, resolve_only=False):
+def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, flow_work_home=None, resolve_only=False):
     start_time = time.time()
     orfs_root = get_orfs_root(root_dir)
     if not os.path.exists(orfs_root):
@@ -215,6 +289,12 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, reso
     config_design = resolved["dir_name"]
     output_design = resolved["design_nickname"]
     design_name = resolved["design_name"]
+    config_file = f"designs/{platform}/{config_design}/{resolved.get('config_file', 'config.mk')}"
+
+    if flow_work_home is None:
+        flow_work_home = os.path.join(work_dir, "orfs_work")
+    flow_work_home = os.path.abspath(flow_work_home)
+    os.makedirs(flow_work_home, exist_ok=True)
 
     print(f"Evaluating {design} ({platform}) using Make flow...")
     print(f"Resolved design: dir={config_design}, DESIGN_NAME={design_name}, DESIGN_NICKNAME={output_design}")
@@ -229,18 +309,25 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, reso
             "output_design": output_design,
         }
 
+    # Populate isolated WORK_HOME with synthesis seeds so run_wo_synth can start from floorplan.
+    synth_seed_ok = seed_synth_artifacts(orfs_root, flow_work_home, platform, output_design, variant)
+    if not synth_seed_ok:
+        print(
+            "Warning: synthesis seed (1_synth.v/.sdc) not found in ORFS cache; "
+            "run_wo_synth may fail if no local synthesis artifacts exist."
+        )
+
     # Build Make Command for Macro Placement (run_mp)
     # This step converts the input DEF into a macro placement file (macro_out)
     # which is then consumed by the main flow.
-    
-    config_file = f"designs/{platform}/{config_design}/config_xp.mk"
     
     cmd_mp = [
         "make",
         "run_mp",
         f"DESIGN_CONFIG={config_file}",
         f"MACRO_DEF={abs_def_path}",
-        f"FLOW_VARIANT={variant}"
+        f"FLOW_VARIANT={variant}",
+        f"WORK_HOME={flow_work_home}",
     ]
     
     log_path_mp = os.path.join(work_dir, "make_mp.log")
@@ -289,7 +376,8 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, reso
         "run_wo_synth",
         f"DESIGN_CONFIG={config_file}", # Config file path relative to ORFS root
         f"MACRO_DEF={abs_def_path}",
-        f"FLOW_VARIANT={variant}"
+        f"FLOW_VARIANT={variant}",
+        f"WORK_HOME={flow_work_home}",
     ]
     
     # Clean previous run if exists? 
@@ -334,7 +422,7 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, reso
                 return None
             
             # Use file-based parsing
-            metrics = parse_metrics_from_files(stdout_content, orfs_root, platform, output_design, variant)
+            metrics = parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform, output_design, variant)
             
             end_time = time.time()
             runtime = end_time - start_time
@@ -344,6 +432,7 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, reso
                 metrics['runtime'] = runtime
                 metrics['resolved_design_dir'] = config_design
                 metrics['resolved_output_design'] = output_design
+                metrics['flow_work_home'] = flow_work_home
                 print("\n=== Evaluation Results ===")
                 for k, v in metrics.items():
                     print(f"{k}: {v}")
@@ -367,8 +456,9 @@ def main():
     parser.add_argument("--def_path", required=True, help="Path to the DEF file")
     parser.add_argument("--design", required=True, help="Design alias/name/dir (e.g. ariane133, bp, bp_be_top)")
     parser.add_argument("--platform", default="nangate45", help="Platform Name (e.g. nangate45)")
-    parser.add_argument("--variant", default="xp", help="Flow Variant Name (default: xp)")
+    parser.add_argument("--variant", default="eval", help="Flow Variant Name (default: eval)")
     parser.add_argument("--work_dir", default=None, help="Working Directory for logs/reports")
+    parser.add_argument("--flow_work_home", default=None, help="Isolated ORFS WORK_HOME for this evaluation")
     parser.add_argument("--resolve_only", action="store_true", help="Only resolve design mapping, do not run make")
     
     args = parser.parse_args()
@@ -386,15 +476,18 @@ def main():
     if not os.path.exists(work_dir):
         os.makedirs(work_dir)
         
-    run_evaluation(
+    result = run_evaluation(
         def_path,
         args.design,
         args.platform,
         args.variant,
         work_dir,
         root_dir,
+        flow_work_home=args.flow_work_home,
         resolve_only=args.resolve_only,
     )
+    if not result:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
