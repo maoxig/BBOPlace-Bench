@@ -49,6 +49,8 @@ DEFAULT_DEF_PER_SEED = 5
 
 ACTIVE_PROCS = set()
 ACTIVE_PROCS_LOCK = threading.Lock()
+RUNNING_TASKS = {}
+RUNNING_TASKS_LOCK = threading.Lock()
 
 
 def register_proc(proc):
@@ -61,6 +63,51 @@ def unregister_proc(proc):
         ACTIVE_PROCS.discard(proc)
 
 
+def register_running_task(task_key, text):
+    with RUNNING_TASKS_LOCK:
+        RUNNING_TASKS[task_key] = {"text": text, "start": time.time()}
+
+
+def unregister_running_task(task_key):
+    with RUNNING_TASKS_LOCK:
+        RUNNING_TASKS.pop(task_key, None)
+
+
+def snapshot_running_tasks():
+    with RUNNING_TASKS_LOCK:
+        return dict(RUNNING_TASKS)
+
+
+def _read_linux_children_pids(pid):
+    path = f"/proc/{int(pid)}/task/{int(pid)}/children"
+    try:
+        with open(path, "r") as f:
+            text = f.read().strip()
+        if not text:
+            return []
+        return [int(x) for x in text.split() if x.strip().isdigit()]
+    except Exception:
+        return []
+
+
+def _kill_process_tree(root_pid, sig):
+    # Some tools may spawn detached descendants; walk Linux /proc tree and signal them too.
+    seen = set()
+    queue = [int(root_pid)]
+    while queue:
+        pid = queue.pop(0)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        queue.extend(_read_linux_children_pids(pid))
+
+    for pid in sorted(seen, reverse=True):
+        try:
+            os.kill(pid, sig)
+        except Exception:
+            pass
+
+
 def terminate_active_processes(sig=signal.SIGTERM):
     with ACTIVE_PROCS_LOCK:
         procs = list(ACTIVE_PROCS)
@@ -68,6 +115,7 @@ def terminate_active_processes(sig=signal.SIGTERM):
         try:
             if p.poll() is None:
                 os.killpg(p.pid, sig)
+                _kill_process_tree(p.pid, sig)
         except Exception:
             pass
 
@@ -476,35 +524,64 @@ def run_single_task(task, workspace_root, platform, variant, timeout_sec, sessio
     eval_base_dir = os.path.join(task["run_path"], "ppa_eval", session_tag)
     os.makedirs(eval_base_dir, exist_ok=True)
     task_variant = build_task_variant(task, variant)
-
-    metrics, err_text, return_code, duration = evaluate_one_def_subprocess(
-        benchmark=task["benchmark"],
-        case_name=task["case"],
-        def_path=task["def_path"],
-        workspace_root=workspace_root,
-        platform=platform,
-        variant=task_variant,
-        eval_base_dir=eval_base_dir,
-        timeout_sec=timeout_sec,
-        cleanup_flow_work=cleanup_flow_work,
+    task_key = f"{task_variant}:{task.get('def_path')}"
+    task_text = (
+        f"seed={task.get('seed')} {task.get('benchmark')}/{task.get('case')}/{task.get('formulation')} "
+        f"def#{task.get('def_rank')}"
     )
+    register_running_task(task_key, task_text)
 
-    row = dict(task)
-    row.update(
-        {
-            "seed": int(task.get("seed", 0)),
-            "eval_ok": metrics is not None and return_code == 0,
-            "return_code": return_code,
-            "duration_sec": duration,
-            "error": err_text,
-            "flow_variant": task_variant,
-            "eval_session": session_tag,
-        }
-    )
-    if metrics:
-        row.update(metrics)
+    try:
+        metrics, err_text, return_code, duration = evaluate_one_def_subprocess(
+            benchmark=task["benchmark"],
+            case_name=task["case"],
+            def_path=task["def_path"],
+            workspace_root=workspace_root,
+            platform=platform,
+            variant=task_variant,
+            eval_base_dir=eval_base_dir,
+            timeout_sec=timeout_sec,
+            cleanup_flow_work=cleanup_flow_work,
+        )
 
-    return row
+        row = dict(task)
+        row.update(
+            {
+                "seed": int(task.get("seed", 0)),
+                "eval_ok": metrics is not None and return_code == 0,
+                "return_code": return_code,
+                "duration_sec": duration,
+                "error": err_text,
+                "flow_variant": task_variant,
+                "eval_session": session_tag,
+            }
+        )
+        if metrics:
+            row.update(metrics)
+
+        return row
+    finally:
+        unregister_running_task(task_key)
+
+
+def print_result_row(row, benchmark):
+    if row.get("eval_ok"):
+        if benchmark == "ICCAD2015":
+            print(
+                "[RESULT] "
+                f"n_tns={row.get('n_tns')} "
+                f"n_wns={row.get('n_wns')} "
+                f"runtime_sec={row.get('runtime_sec', row.get('duration_sec')):.2f}"
+            )
+        else:
+            print(
+                "[RESULT] "
+                f"WNS={row.get('WNS')} TNS={row.get('TNS')} "
+                f"GRT_WL={row.get('GRT_WL')} DRT_WL={row.get('DRT_WL')} "
+                f"runtime_sec={row.get('runtime', row.get('duration_sec')):.2f}"
+            )
+    else:
+        print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
 
 
 def build_task_plan(
@@ -809,24 +886,7 @@ def main():
 
                 row = run_single_task(task, workspace_root, args.platform, args.variant, timeout_sec, session_tag, args.cleanup_flow_work)
                 result_rows.append(row)
-
-                if row.get("eval_ok"):
-                    if task["benchmark"] == "ICCAD2015":
-                        print(
-                            "[RESULT] "
-                            f"n_tns={row.get('n_tns')} "
-                            f"n_wns={row.get('n_wns')} "
-                            f"runtime_sec={row.get('runtime_sec', row.get('duration_sec')):.2f}"
-                        )
-                    else:
-                        print(
-                            "[RESULT] "
-                            f"WNS={row.get('WNS')} TNS={row.get('TNS')} "
-                            f"GRT_WL={row.get('GRT_WL')} DRT_WL={row.get('DRT_WL')} "
-                            f"runtime_sec={row.get('runtime', row.get('duration_sec')):.2f}"
-                        )
-                else:
-                    print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
+                print_result_row(row, task["benchmark"])
 
                 elapsed = time.time() - run_start
                 avg = elapsed / idx
@@ -849,37 +909,67 @@ def main():
                     ): t
                     for t in tasks
                 }
-                done = 0
-                for fut in concurrent.futures.as_completed(future_to_task):
-                    task = future_to_task[fut]
-                    done += 1
-                    try:
-                        row = fut.result()
-                    except Exception as e:
-                        row = dict(task)
-                        row.update(
-                            {
-                                "seed": int(task.get("seed", seeds[0])),
-                                "eval_ok": False,
-                                "return_code": -1,
-                                "duration_sec": 0.0,
-                                "error": f"internal exception: {e}",
-                                "eval_session": session_tag,
-                            }
-                        )
-                    result_rows.append(row)
-
+                for idx, t in enumerate(tasks, 1):
                     print(
-                        f"\n[DONE {done}/{len(tasks)}] seed={task['seed']} {task['benchmark']}/{task['case']}/{task['formulation']} "
-                        f"def#{task['def_rank']} ok={row.get('eval_ok')}"
+                        f"[SUBMIT {idx}/{len(tasks)}] seed={t['seed']} {t['benchmark']}/{t['case']}/{t['formulation']} "
+                        f"def#{t['def_rank']}"
                     )
-                    if not row.get("eval_ok"):
-                        print(f"[RESULT] FAILED rc={row.get('return_code')} err={row.get('error')}")
+                done = 0
+                pending = set(future_to_task.keys())
+                heartbeat_sec = 10.0
+                while pending:
+                    completed, pending = concurrent.futures.wait(
+                        pending,
+                        timeout=heartbeat_sec,
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
 
-                    elapsed = time.time() - run_start
-                    avg = elapsed / done
-                    remaining = avg * (len(tasks) - done)
-                    print(f"[PROGRESS] done={done}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
+                    if not completed:
+                        running = snapshot_running_tasks()
+                        elapsed = time.time() - run_start
+                        print(
+                            f"[HEARTBEAT] done={done}/{len(tasks)} running={len(running)} "
+                            f"elapsed={elapsed/60:.1f}m"
+                        )
+                        if running:
+                            sample = sorted(
+                                running.values(),
+                                key=lambda x: float(x.get("start", 0.0)),
+                            )[: min(3, len(running))]
+                            for x in sample:
+                                age = time.time() - float(x.get("start", time.time()))
+                                print(f"  [RUNNING] {x.get('text')} age={age:.0f}s")
+                        continue
+
+                    for fut in completed:
+                        task = future_to_task[fut]
+                        done += 1
+                        try:
+                            row = fut.result()
+                        except Exception as e:
+                            row = dict(task)
+                            row.update(
+                                {
+                                    "seed": int(task.get("seed", seeds[0])),
+                                    "eval_ok": False,
+                                    "return_code": -1,
+                                    "duration_sec": 0.0,
+                                    "error": f"internal exception: {e}",
+                                    "eval_session": session_tag,
+                                }
+                            )
+                        result_rows.append(row)
+
+                        print(
+                            f"\n[DONE {done}/{len(tasks)}] seed={task['seed']} {task['benchmark']}/{task['case']}/{task['formulation']} "
+                            f"def#{task['def_rank']} ok={row.get('eval_ok')}"
+                        )
+                        print_result_row(row, task["benchmark"])
+
+                        elapsed = time.time() - run_start
+                        avg = elapsed / done
+                        remaining = avg * (len(tasks) - done)
+                        print(f"[PROGRESS] done={done}/{len(tasks)} elapsed={elapsed/60:.1f}m avg={avg:.1f}s eta={remaining/60:.1f}m")
             except KeyboardInterrupt:
                 interrupted = True
                 print("\n[WARN] KeyboardInterrupt received. Terminating active worker subprocesses...")
@@ -887,7 +977,9 @@ def main():
                 time.sleep(0.5)
                 terminate_active_processes(signal.SIGKILL)
                 ex.shutdown(wait=False, cancel_futures=True)
-                raise SystemExit(130)
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(130)
             finally:
                 if not interrupted:
                     ex.shutdown(wait=True, cancel_futures=False)
@@ -896,7 +988,9 @@ def main():
         terminate_active_processes(signal.SIGTERM)
         time.sleep(0.5)
         terminate_active_processes(signal.SIGKILL)
-        raise SystemExit(130)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(130)
 
     final = {
         "seed": int(seeds[0]),
