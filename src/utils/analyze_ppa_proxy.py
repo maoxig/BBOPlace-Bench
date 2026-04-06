@@ -10,10 +10,10 @@ import numpy as np
 import pandas as pd
 
 
-OPENROAD_PPA_METRICS = ["GRT_WL", "DRT_WL", "WNS", "TNS", "Power"]
+OPENROAD_PPA_METRICS = ["GRT_WL", "DRT_WL", "WNS", "TNS", "Power", "Area", "DRC"]
 ICCAD_PPA_METRICS = ["WNS", "TNS"]
 MAXIMIZE_METRICS = ["WNS", "TNS", "n_tns", "n_wns"]
-MINIMIZE_METRICS = ["GRT_WL", "DRT_WL", "Power", "hpwl"]
+MINIMIZE_METRICS = ["GRT_WL", "DRT_WL", "Power", "Area", "DRC", "hpwl"]
 
 
 def ensure_dir(path):
@@ -100,11 +100,26 @@ def infer_metric_columns(df):
         "WNS",
         "TNS",
         "Power",
+        "Area",
+        "DRC",
         "n_tns",
         "n_wns",
         "hpwl",
     ]
     return [c for c in candidate_cols if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+
+
+def harmonize_openroad_columns(df):
+    out = df.copy()
+    # Prefer reporting CellArea as "Area" while keeping original columns intact.
+    if "Area" not in out.columns and "StdCellArea" in out.columns:
+        out["Area"] = pd.to_numeric(out["StdCellArea"], errors="coerce")
+    elif "Area" in out.columns:
+        out["Area"] = pd.to_numeric(out["Area"], errors="coerce")
+
+    if "DRC" in out.columns:
+        out["DRC"] = pd.to_numeric(out["DRC"], errors="coerce")
+    return out
 
 
 def _pick_existing_columns(df, preferred):
@@ -159,6 +174,22 @@ def normalize_metric_direction(df, metrics):
         else:
             norm_metrics.append(m)
             metric_labels[m] = m
+
+    # Keep a deterministic and readable order for plots/tables.
+    preferred_order = [
+        "GRT_WL",
+        "DRT_WL",
+        "NEG_WNS",
+        "NEG_TNS",
+        "Power",
+        "Area",
+        "DRC",
+        "n_tns",
+        "n_wns",
+        "hpwl",
+    ]
+    rank = {k: i for i, k in enumerate(preferred_order)}
+    norm_metrics = sorted(norm_metrics, key=lambda x: rank.get(x, 10_000))
 
     return out, norm_metrics, metric_labels
 
@@ -1110,6 +1141,118 @@ def write_report(report_path, args, ppa_df, ppa_metrics, summary_df, hv_corr_df,
         f.write("\n".join(lines))
 
 
+def run_analysis_bundle(ppa_df, hv_df, args, output_dir, scope_title="overall"):
+    ensure_dir(output_dir)
+    report_dir = os.path.join(output_dir, "reports")
+    fig_dir = os.path.join(output_dir, "figures")
+    tab_dir = os.path.join(output_dir, "tables")
+    ensure_dir(report_dir)
+    ensure_dir(fig_dir)
+    ensure_dir(tab_dir)
+
+    if len(ppa_df) == 0:
+        return
+
+    ppa_df = ppa_df.copy().reset_index(drop=True)
+    ppa_df["row_uid"] = np.arange(len(ppa_df), dtype=int)
+
+    ppa_df = harmonize_openroad_columns(ppa_df)
+
+    ppa_metrics = choose_ppa_metrics(ppa_df)
+    if not ppa_metrics:
+        raise ValueError(f"No numeric PPA metric columns found for scope={scope_title}.")
+
+    ppa_df, ppa_metrics, metric_labels = normalize_metric_direction(ppa_df, ppa_metrics)
+    ppa_metrics_display = [metric_label(m, metric_labels) for m in ppa_metrics]
+
+    ppa_df = attach_proxy_vectors_by_defrank(ppa_df)
+    proxy_long_df = build_proxy_long_df(ppa_df, ppa_metrics)
+
+    summary_df = summarize_by_group(ppa_df, ppa_metrics)
+    hv_corr_df = compute_hv_metric_correlation(summary_df, ppa_metrics)
+    improve_df = compare_hpo_mgo(summary_df, ppa_metrics)
+    proxy_corr_df = compute_proxy_ppa_correlation(proxy_long_df, ppa_metrics)
+    rank_df = compute_groupwise_rank_consistency(proxy_long_df, ppa_metrics)
+    hit_detail_df, hit_summary_df = compute_top1_hit_rate(proxy_long_df, ppa_metrics)
+
+    # Convert metric identifiers to display labels for readability in tables.
+    for df_metric in [hv_corr_df, improve_df]:
+        if not df_metric.empty and "metric" in df_metric.columns:
+            df_metric["metric"] = df_metric["metric"].map(lambda x: metric_label(x, metric_labels))
+    for df_metric in [proxy_corr_df, rank_df, hit_summary_df, hit_detail_df]:
+        if not df_metric.empty and "ppa_metric" in df_metric.columns:
+            df_metric["ppa_metric"] = df_metric["ppa_metric"].map(lambda x: metric_label(x, metric_labels))
+
+    if args.hv_json and not hv_df.empty:
+        hv_subset = hv_df.copy()
+        if "benchmark" in ppa_df.columns:
+            benches = set(ppa_df["benchmark"].dropna().astype(str).unique())
+            hv_subset = hv_subset[hv_subset["benchmark"].astype(str).isin(benches)]
+        if "case" in ppa_df.columns:
+            cases = set(ppa_df["case"].dropna().astype(str).unique())
+            hv_subset = hv_subset[hv_subset["case"].astype(str).isin(cases)]
+        if "formulation" in ppa_df.columns:
+            forms = set(ppa_df["formulation"].dropna().astype(str).unique())
+            hv_subset = hv_subset[hv_subset["formulation"].astype(str).isin(forms)]
+        catalog_df = build_proxy_catalog_from_hv(hv_subset)
+    else:
+        catalog_df = pd.DataFrame()
+
+    save_df(summary_df, os.path.join(tab_dir, "summary_by_case_formulation.csv"), os.path.join(tab_dir, "summary_by_case_formulation.tex"))
+    save_df(hv_corr_df, os.path.join(tab_dir, "hv_metric_correlation.csv"), os.path.join(tab_dir, "hv_metric_correlation.tex"))
+    save_df(improve_df, os.path.join(tab_dir, "hpo_vs_mgo_improvement.csv"), os.path.join(tab_dir, "hpo_vs_mgo_improvement.tex"))
+    save_df(proxy_corr_df, os.path.join(tab_dir, "proxy_metric_correlation.csv"), os.path.join(tab_dir, "proxy_metric_correlation.tex"))
+    save_df(rank_df, os.path.join(tab_dir, "proxy_groupwise_rank_consistency.csv"), os.path.join(tab_dir, "proxy_groupwise_rank_consistency.tex"))
+    save_df(hit_summary_df, os.path.join(tab_dir, "proxy_top1_hit_rate.csv"), os.path.join(tab_dir, "proxy_top1_hit_rate.tex"))
+
+    hit_detail_df.to_csv(os.path.join(tab_dir, "proxy_top1_hit_detail.csv"), index=False)
+
+    if not catalog_df.empty:
+        save_df(catalog_df, os.path.join(tab_dir, "proxy_object_catalog_all_modes.csv"), os.path.join(tab_dir, "proxy_object_catalog_all_modes.tex"))
+        missing_df = catalog_df[catalog_df["proxy_labels"].fillna("").astype(str).str.strip() == ""]
+        if not missing_df.empty:
+            missing_df.to_csv(os.path.join(tab_dir, "proxy_object_catalog_missing_labels.csv"), index=False)
+
+        known_df = catalog_df[catalog_df["proxy_labels"].fillna("").astype(str).str.strip() != ""]
+        mode_sets = (
+            known_df.groupby(["mode", "proxy_labels"], as_index=False)
+            .size()
+            .rename(columns={"size": "n_best_runs"})
+            .sort_values(["mode", "n_best_runs"], ascending=[True, False])
+        )
+        save_df(mode_sets, os.path.join(tab_dir, "proxy_mode_object_sets.csv"), os.path.join(tab_dir, "proxy_mode_object_sets.tex"))
+
+    ppa_df.to_csv(os.path.join(tab_dir, "ppa_with_proxy_alignment.csv"), index=False)
+    proxy_long_df.to_csv(os.path.join(tab_dir, "proxy_long_alignment.csv"), index=False)
+
+    make_boxplots(ppa_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
+    make_hv_scatter(ppa_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
+    make_performance_profile(summary_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
+    for m in ppa_metrics:
+        make_case_metric_heatmap(summary_df, m, fig_dir, metric_labels=metric_labels)
+
+    make_proxy_ppa_corr_heatmap(proxy_corr_df, fig_dir)
+    make_rank_consistency_heatmap(rank_df, fig_dir)
+    make_top1_hit_bar(hit_summary_df, fig_dir)
+    make_proxy_mode_dim_bar(catalog_df, fig_dir)
+    make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir, metric_labels=metric_labels)
+
+    report_args = argparse.Namespace(ppa_csv=args.ppa_csv, hv_json=args.hv_json, output_dir=output_dir)
+    write_report(
+        report_path=os.path.join(report_dir, "analysis_report.md"),
+        args=report_args,
+        ppa_df=ppa_df,
+        ppa_metrics=ppa_metrics_display,
+        summary_df=summary_df,
+        hv_corr_df=hv_corr_df,
+        improve_df=improve_df,
+        proxy_corr_df=proxy_corr_df,
+        rank_df=rank_df,
+        hit_summary_df=hit_summary_df,
+        catalog_df=catalog_df,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Joint analysis for PPA metrics and proxy objectives")
     parser.add_argument("--ppa_csv", required=True, help="Path to PPA evaluation CSV")
@@ -1127,12 +1270,6 @@ def main():
 
     configure_style()
     ensure_dir(args.output_dir)
-    report_dir = os.path.join(args.output_dir, "reports")
-    fig_dir = os.path.join(args.output_dir, "figures")
-    tab_dir = os.path.join(args.output_dir, "tables")
-    ensure_dir(report_dir)
-    ensure_dir(fig_dir)
-    ensure_dir(tab_dir)
 
     ppa_df = pd.read_csv(args.ppa_csv)
 
@@ -1170,98 +1307,24 @@ def main():
     if len(ppa_df) == 0:
         raise ValueError("No rows remain after filtering.")
 
-    ppa_df = ppa_df.reset_index(drop=True)
-    ppa_df["row_uid"] = np.arange(len(ppa_df), dtype=int)
+    run_analysis_bundle(ppa_df, hv_df, args, args.output_dir, scope_title="overall")
 
-    ppa_metrics = choose_ppa_metrics(ppa_df)
-    if not ppa_metrics:
-        raise ValueError("No numeric PPA metric columns found.")
-
-    ppa_df, ppa_metrics, metric_labels = normalize_metric_direction(ppa_df, ppa_metrics)
-    ppa_metrics_display = [metric_label(m, metric_labels) for m in ppa_metrics]
-
-    ppa_df = attach_proxy_vectors_by_defrank(ppa_df)
-    proxy_long_df = build_proxy_long_df(ppa_df, ppa_metrics)
-
-    summary_df = summarize_by_group(ppa_df, ppa_metrics)
-    hv_corr_df = compute_hv_metric_correlation(summary_df, ppa_metrics)
-    improve_df = compare_hpo_mgo(summary_df, ppa_metrics)
-    proxy_corr_df = compute_proxy_ppa_correlation(proxy_long_df, ppa_metrics)
-    rank_df = compute_groupwise_rank_consistency(proxy_long_df, ppa_metrics)
-    hit_detail_df, hit_summary_df = compute_top1_hit_rate(proxy_long_df, ppa_metrics)
-
-    # Convert metric identifiers to display labels for readability in tables.
-    for df_metric in [hv_corr_df, improve_df]:
-        if not df_metric.empty and "metric" in df_metric.columns:
-            df_metric["metric"] = df_metric["metric"].map(lambda x: metric_label(x, metric_labels))
-    for df_metric in [proxy_corr_df, rank_df, hit_summary_df, hit_detail_df]:
-        if not df_metric.empty and "ppa_metric" in df_metric.columns:
-            df_metric["ppa_metric"] = df_metric["ppa_metric"].map(lambda x: metric_label(x, metric_labels))
-
-    if args.hv_json and not hv_df.empty:
-        catalog_df = build_proxy_catalog_from_hv(hv_df)
-    else:
-        catalog_df = pd.DataFrame()
-
-    save_df(summary_df, os.path.join(tab_dir, "summary_by_case_formulation.csv"), os.path.join(tab_dir, "summary_by_case_formulation.tex"))
-    save_df(hv_corr_df, os.path.join(tab_dir, "hv_metric_correlation.csv"), os.path.join(tab_dir, "hv_metric_correlation.tex"))
-    save_df(improve_df, os.path.join(tab_dir, "hpo_vs_mgo_improvement.csv"), os.path.join(tab_dir, "hpo_vs_mgo_improvement.tex"))
-    save_df(proxy_corr_df, os.path.join(tab_dir, "proxy_metric_correlation.csv"), os.path.join(tab_dir, "proxy_metric_correlation.tex"))
-    save_df(rank_df, os.path.join(tab_dir, "proxy_groupwise_rank_consistency.csv"), os.path.join(tab_dir, "proxy_groupwise_rank_consistency.tex"))
-    save_df(hit_summary_df, os.path.join(tab_dir, "proxy_top1_hit_rate.csv"), os.path.join(tab_dir, "proxy_top1_hit_rate.tex"))
-
-    hit_detail_df.to_csv(os.path.join(tab_dir, "proxy_top1_hit_detail.csv"), index=False)
-
-    if not catalog_df.empty:
-        save_df(catalog_df, os.path.join(tab_dir, "proxy_object_catalog_all_modes.csv"), os.path.join(tab_dir, "proxy_object_catalog_all_modes.tex"))
-        missing_df = catalog_df[catalog_df["proxy_labels"].fillna("").astype(str).str.strip() == ""]
-        if not missing_df.empty:
-            missing_df.to_csv(os.path.join(tab_dir, "proxy_object_catalog_missing_labels.csv"), index=False)
-
-        known_df = catalog_df[catalog_df["proxy_labels"].fillna("").astype(str).str.strip() != ""]
-        mode_sets = (
-            known_df.groupby(["mode", "proxy_labels"], as_index=False)
-            .size()
-            .rename(columns={"size": "n_best_runs"})
-            .sort_values(["mode", "n_best_runs"], ascending=[True, False])
-        )
-        save_df(mode_sets, os.path.join(tab_dir, "proxy_mode_object_sets.csv"), os.path.join(tab_dir, "proxy_mode_object_sets.tex"))
-    else:
-        mode_sets = pd.DataFrame()
-
-    ppa_df.to_csv(os.path.join(tab_dir, "ppa_with_proxy_alignment.csv"), index=False)
-    proxy_long_df.to_csv(os.path.join(tab_dir, "proxy_long_alignment.csv"), index=False)
-
-    make_boxplots(ppa_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
-    make_hv_scatter(ppa_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
-    make_performance_profile(summary_df, ppa_metrics, fig_dir, metric_labels=metric_labels)
-    for m in ppa_metrics:
-        make_case_metric_heatmap(summary_df, m, fig_dir, metric_labels=metric_labels)
-
-    make_proxy_ppa_corr_heatmap(proxy_corr_df, fig_dir)
-    make_rank_consistency_heatmap(rank_df, fig_dir)
-    make_top1_hit_bar(hit_summary_df, fig_dir)
-    make_proxy_mode_dim_bar(catalog_df, fig_dir)
-    make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir, metric_labels=metric_labels)
-
-    write_report(
-        report_path=os.path.join(report_dir, "analysis_report.md"),
-        args=args,
-        ppa_df=ppa_df,
-        ppa_metrics=ppa_metrics_display,
-        summary_df=summary_df,
-        hv_corr_df=hv_corr_df,
-        improve_df=improve_df,
-        proxy_corr_df=proxy_corr_df,
-        rank_df=rank_df,
-        hit_summary_df=hit_summary_df,
-        catalog_df=catalog_df,
-    )
+    # Additional per-design analysis for OpenROAD cases (1 + N batches output).
+    per_design_count = 0
+    if "benchmark" in ppa_df.columns and "case" in ppa_df.columns:
+        openroad_df = ppa_df[ppa_df["benchmark"].astype(str) == "OpenROAD"].copy()
+        openroad_cases = sorted(openroad_df["case"].dropna().astype(str).unique().tolist())
+        for case_name in openroad_cases:
+            sub_df = openroad_df[openroad_df["case"].astype(str) == case_name].copy()
+            if sub_df.empty:
+                continue
+            case_out = os.path.join(args.output_dir, "by_design", sanitize_name(case_name))
+            run_analysis_bundle(sub_df, hv_df, args, case_out, scope_title=f"design:{case_name}")
+            per_design_count += 1
 
     print("Analysis complete.")
-    print(f"Output dir: {args.output_dir}")
-    print(f"PPA metrics: {ppa_metrics}")
-    print(f"Proxy mapped rows: {int(ppa_df['proxy_map_ok'].sum())}/{len(ppa_df)}")
+    print(f"Overall output dir: {args.output_dir}")
+    print(f"Per-design batches generated: {per_design_count}")
 
 
 if __name__ == "__main__":

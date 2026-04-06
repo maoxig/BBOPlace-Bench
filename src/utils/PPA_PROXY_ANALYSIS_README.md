@@ -155,10 +155,29 @@ results/analysis_reports/
 - 若数据列名变化，请优先保持 `benchmark,case,formulation,best_hv` 与指标列一致。
 - 若 `final_solutions.pkl` 缺失，脚本会回退尝试 `elite_pool.pkl`；若都不存在，对应 run 的 proxy 对齐会标记为失败。
 - 指标策略：
-  - `--benchmarks OpenROAD` 时优先分析 `GRT_WL/DRT_WL/WNS/TNS/Power`。
+  - `--benchmarks OpenROAD` 时优先分析 `GRT_WL/DRT_WL/WNS/TNS/Power/Area/DRC`。
   - `--benchmarks ICCAD2015` 时优先分析 `WNS/TNS`。
   - `--benchmarks all` 时取两类 benchmark 相关指标的并集并按可用性自动处理缺失。
-  - 方向统一后，图表中会显示 `-WNS/-TNS` 标签。
+  - 方向统一后，图表中会显示 `-WNS/-TNS` 标签，且顺序固定为 `GRT_WL -> DRT_WL -> -WNS -> -TNS -> Power -> Area -> DRC`。
+  - `Area` 对应 OpenROAD 的 `StdCellArea`（脚本会自动将 `StdCellArea` 归一为 `Area`）。
+
+## 9. 总体 + 分 design 输出（1 + 6 批）
+
+脚本会在原 `--output_dir` 下先输出 1 批总体分析结果，然后针对 OpenROAD 每个 design（case）自动额外输出一批：
+
+```text
+<output_dir>/
+  reports/ figures/ tables/                 # 总体
+  by_design/
+    ariane133/reports|figures|tables/
+    ariane136/reports|figures|tables/
+    bp/reports|figures|tables/
+    bp_be/reports|figures|tables/
+    bp_fe/reports|figures|tables/
+    swerv_wrapper/reports|figures|tables/
+```
+
+这对应 `1 + 6` 批分析产物，可直接用于“总体结论 + 分 design 结论”。
 
 ## 8. 多种子 PPA 评估预算控制（速度 vs 严谨）
 
