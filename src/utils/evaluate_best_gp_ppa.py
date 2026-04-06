@@ -729,6 +729,32 @@ def build_task_plan(
     return tasks
 
 
+def task_shard_index(task, num_shards):
+    key = "|".join(
+        [
+            str(task.get("seed", "")),
+            str(task.get("benchmark", "")),
+            str(task.get("case", "")),
+            str(task.get("formulation", "")),
+            str(task.get("def_rank", "")),
+            str(task.get("def_path", "")),
+        ]
+    )
+    h = hashlib.md5(key.encode("utf-8")).hexdigest()
+    return int(h, 16) % int(num_shards)
+
+
+def apply_task_sharding(tasks, num_shards, shard_id):
+    if int(num_shards) <= 1:
+        return list(tasks)
+    sid0 = int(shard_id) - 1
+    out = []
+    for t in tasks:
+        if task_shard_index(t, num_shards) == sid0:
+            out.append(t)
+    return out
+
+
 def print_plan(tasks, preview_limit, estimate_per_def_min):
     print("\n=== Evaluation Plan ===")
     print(f"Total DEF tasks: {len(tasks)}")
@@ -821,7 +847,15 @@ def main():
         help="Progress rendering style: auto chooses compact for TTY, plain otherwise",
     )
     parser.add_argument("--heartbeat_sec", type=float, default=10.0, help="Heartbeat interval in seconds")
+    parser.add_argument("--num_shards", type=int, default=1, help="Total number of shards for multi-machine runs")
+    parser.add_argument("--shard_id", type=int, default=1, help="Current shard id in [1, num_shards]")
+    parser.add_argument("--worker_tag", type=str, default="", help="Optional worker tag to isolate output files")
     args = parser.parse_args()
+
+    if args.num_shards < 1:
+        raise ValueError("--num_shards must be >= 1")
+    if args.shard_id < 1 or args.shard_id > args.num_shards:
+        raise ValueError("--shard_id must satisfy 1 <= shard_id <= num_shards")
 
     workspace_root = os.path.abspath(args.workspace)
     base_output_dir = os.path.abspath(args.output)
@@ -831,6 +865,12 @@ def main():
         output_dir = os.path.join(base_output_dir, f"seeds_{seed_tag(seeds)}")
     else:
         output_dir = os.path.join(base_output_dir, f"seed_{seeds[0]}")
+
+    shard_label = f"shard_{args.shard_id}of{args.num_shards}" if int(args.num_shards) > 1 else "single"
+    if args.worker_tag:
+        output_dir = os.path.join(output_dir, f"{shard_label}_{args.worker_tag}")
+    else:
+        output_dir = os.path.join(output_dir, shard_label)
     os.makedirs(output_dir, exist_ok=True)
 
     if args.hv_json:
@@ -857,6 +897,8 @@ def main():
         max_total_defs,
         args.def_select_strategy,
     )
+    all_tasks = list(tasks)
+    tasks = apply_task_sharding(tasks, args.num_shards, args.shard_id)
 
     if multi_seed:
         plan_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best_plan.json")
@@ -887,10 +929,20 @@ def main():
                 },
                 "formulations_filter": args.formulations,
                 "n_tasks": len(tasks),
+                "n_tasks_before_sharding": len(all_tasks),
+                "num_shards": int(args.num_shards),
+                "shard_id": int(args.shard_id),
+                "worker_tag": args.worker_tag,
                 "tasks": tasks,
             },
             f,
             indent=2,
+        )
+
+    if int(args.num_shards) > 1:
+        print(
+            f"[INFO] Task sharding enabled: shard={args.shard_id}/{args.num_shards}, "
+            f"assigned={len(tasks)}, total_before_sharding={len(all_tasks)}"
         )
 
     print_plan(tasks, args.preview_limit, args.estimate_per_def_min)
@@ -1078,6 +1130,9 @@ def main():
         "hv_json": hv_json,
         "platform": args.platform,
         "variant": args.variant,
+        "num_shards": int(args.num_shards),
+        "shard_id": int(args.shard_id),
+        "worker_tag": args.worker_tag,
         "n_rows": len(result_rows),
         "rows": result_rows,
     }
