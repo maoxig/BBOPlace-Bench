@@ -6,6 +6,7 @@ import re
 import time
 import glob
 import shutil
+import json
 
 def get_project_root():
     """
@@ -117,7 +118,8 @@ def cleanup_flow_work_home(flow_work_home):
         print(f"Warning: skip cleanup because marker is missing: {flow_work_home}")
         return
 
-    for name in ["logs", "objects", "reports", "results"]:
+    # Keep logs for post-run debugging; cleanup heavy intermediates only.
+    for name in ["objects", "reports", "results"]:
         p = os.path.join(flow_work_home, name)
         if os.path.isdir(p):
             try:
@@ -192,6 +194,8 @@ def parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform
     metrics = {
         "GRT_WL": None,
         "DRT_WL": None,
+        "DRC": None,
+        "StdCellArea": None,
         "WNS": None,
         "TNS": None,
         "Power": None
@@ -204,6 +208,35 @@ def parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform
     finish_rpt_path = os.path.join(report_dir, "6_finish.rpt")
     grt_log_path = os.path.join(log_dir, "5_1_grt.log")
     drt_log_path = os.path.join(log_dir, "5_3_route.log") # Sometimes named 5_3_route.log or similar
+    route_json_path = os.path.join(log_dir, "5_2_route.json")
+    finish_json_path = os.path.join(log_dir, "6_report.json")
+
+    # 0. Parse machine-friendly stage JSON first (preferred for stability).
+    if os.path.exists(route_json_path):
+        try:
+            with open(route_json_path, "r") as f:
+                route_json = json.load(f)
+            if "detailedroute__route__wirelength" in route_json:
+                metrics["DRT_WL"] = float(route_json["detailedroute__route__wirelength"])
+            if "detailedroute__route__drc_errors" in route_json:
+                metrics["DRC"] = float(route_json["detailedroute__route__drc_errors"])
+        except Exception as e:
+            print(f"Warning: Failed to read {route_json_path}: {e}")
+
+    if os.path.exists(finish_json_path):
+        try:
+            with open(finish_json_path, "r") as f:
+                finish_json = json.load(f)
+            if "finish__timing__setup__tns" in finish_json:
+                metrics["TNS"] = float(finish_json["finish__timing__setup__tns"])
+            if "finish__timing__setup__ws" in finish_json:
+                metrics["WNS"] = float(finish_json["finish__timing__setup__ws"])
+            if "finish__power__total" in finish_json:
+                metrics["Power"] = float(finish_json["finish__power__total"])
+            if "finish__design__instance__area__stdcell" in finish_json:
+                metrics["StdCellArea"] = float(finish_json["finish__design__instance__area__stdcell"])
+        except Exception as e:
+            print(f"Warning: Failed to read {finish_json_path}: {e}")
     
     # 1. Parse WNS, TNS, Power from 6_finish.rpt
     if os.path.exists(finish_rpt_path):
@@ -260,7 +293,7 @@ def parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform
         except Exception as e:
              print(f"Warning: Failed to read {grt_log_path}: {e}")
              
-    # 3. Parse DRT WL from 5_3_route.log
+    # 3. Parse DRT WL from route log
     if os.path.exists(drt_log_path):
         try:
             with open(drt_log_path, 'r') as f:
@@ -272,6 +305,19 @@ def parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform
                     metrics["DRT_WL"] = float(match.group(1))
         except Exception as e:
              print(f"Warning: Failed to read {drt_log_path}: {e}")
+
+    # Fallback alternative naming used in some ORFS flows.
+    if metrics["DRT_WL"] is None:
+        drt_log_alt_path = os.path.join(log_dir, "5_2_route.log")
+        if os.path.exists(drt_log_alt_path):
+            try:
+                with open(drt_log_alt_path, 'r') as f:
+                    content = f.read()
+                    match = re.search(r"Total wire length =\s+([\d\.]+)\s+um", content)
+                    if match:
+                        metrics["DRT_WL"] = float(match.group(1))
+            except Exception as e:
+                print(f"Warning: Failed to read {drt_log_alt_path}: {e}")
 
     # Fallback to stdout if metrics are still None
     if metrics["GRT_WL"] is None:

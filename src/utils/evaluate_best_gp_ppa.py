@@ -375,6 +375,8 @@ def parse_openroad_output(stdout, work_dir, min_mtime=None):
     patterns = {
         "GRT_WL": r"GRT_WL:\s*([-+eE0-9\.]+)",
         "DRT_WL": r"DRT_WL:\s*([-+eE0-9\.]+)",
+        "DRC": r"DRC:\s*([-+eE0-9\.]+)",
+        "StdCellArea": r"StdCellArea:\s*([-+eE0-9\.]+)",
         "WNS": r"WNS:\s*([-+eE0-9\.]+)",
         "TNS": r"TNS:\s*([-+eE0-9\.]+)",
         "Power": r"Power:\s*([-+eE0-9\.]+)",
@@ -579,6 +581,7 @@ def print_result_row(row, benchmark):
                 "[RESULT] "
                 f"WNS={row.get('WNS')} TNS={row.get('TNS')} "
                 f"GRT_WL={row.get('GRT_WL')} DRT_WL={row.get('DRT_WL')} "
+                f"DRC={row.get('DRC')} StdCellArea={row.get('StdCellArea')} "
                 f"runtime_sec={row.get('runtime', row.get('duration_sec')):.2f}"
             )
     else:
