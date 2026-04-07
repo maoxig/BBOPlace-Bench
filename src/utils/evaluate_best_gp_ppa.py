@@ -409,6 +409,7 @@ def evaluate_one_def_subprocess(
     eval_base_dir,
     timeout_sec,
     cleanup_flow_work,
+    reuse_existing_results,
 ):
     start = time.time()
 
@@ -424,9 +425,17 @@ def evaluate_one_def_subprocess(
             workspace_root,
         ]
         report_path = f"{def_path}.timing.txt"
+        if reuse_existing_results and os.path.exists(report_path):
+            cached = parse_iccad_output("", report_path)
+            if cached is not None:
+                return cached, "reused existing report", 0, 0.0
     elif benchmark == "OpenROAD":
         work_dir = os.path.join(eval_base_dir, os.path.basename(def_path).replace(".def", ""))
         os.makedirs(work_dir, exist_ok=True)
+        if reuse_existing_results and os.path.exists(os.path.join(work_dir, "metrics.txt")):
+            cached = parse_openroad_output("", work_dir, min_mtime=None)
+            if cached is not None:
+                return cached, "reused existing metrics", 0, 0.0
         cmd = [
             sys.executable,
             os.path.join(workspace_root, "src", "utils", "openroad_evaluator.py"),
@@ -445,6 +454,8 @@ def evaluate_one_def_subprocess(
             "--cleanup_flow_work",
             cleanup_flow_work,
         ]
+        if reuse_existing_results:
+            cmd.append("--reuse_existing_logs")
     else:
         return None, "unsupported benchmark", -1, 0.0
 
@@ -523,7 +534,18 @@ def parse_case_filters(args):
     return common_cases, case_filters
 
 
-def run_single_task(task, workspace_root, platform, variant, timeout_sec, session_tag, cleanup_flow_work):
+def run_single_task(
+    task,
+    workspace_root,
+    platform,
+    variant,
+    timeout_sec,
+    session_tag,
+    cleanup_flow_work,
+    max_retries,
+    retry_backoff_sec,
+    reuse_existing_results,
+):
     eval_base_dir = os.path.join(task["run_path"], "ppa_eval", session_tag)
     os.makedirs(eval_base_dir, exist_ok=True)
     task_variant = build_task_variant(task, variant)
@@ -535,23 +557,42 @@ def run_single_task(task, workspace_root, platform, variant, timeout_sec, sessio
     register_running_task(task_key, task_text)
 
     try:
-        metrics, err_text, return_code, duration = evaluate_one_def_subprocess(
-            benchmark=task["benchmark"],
-            case_name=task["case"],
-            def_path=task["def_path"],
-            workspace_root=workspace_root,
-            platform=platform,
-            variant=task_variant,
-            eval_base_dir=eval_base_dir,
-            timeout_sec=timeout_sec,
-            cleanup_flow_work=cleanup_flow_work,
-        )
+        attempts_used = 0
+        metrics = None
+        err_text = ""
+        return_code = -1
+        duration = 0.0
+        max_attempts = max(1, int(max_retries) + 1)
+        for attempt in range(1, max_attempts + 1):
+            attempts_used = attempt
+            metrics, err_text, return_code, duration = evaluate_one_def_subprocess(
+                benchmark=task["benchmark"],
+                case_name=task["case"],
+                def_path=task["def_path"],
+                workspace_root=workspace_root,
+                platform=platform,
+                variant=task_variant,
+                eval_base_dir=eval_base_dir,
+                timeout_sec=timeout_sec,
+                cleanup_flow_work=cleanup_flow_work,
+                reuse_existing_results=reuse_existing_results,
+            )
+            if metrics is not None and return_code == 0:
+                break
+            if attempt < max_attempts:
+                print(
+                    f"[RETRY] {task['benchmark']}/{task['case']}/{task['formulation']} "
+                    f"def#{task['def_rank']} attempt {attempt}/{max_attempts} failed, retrying..."
+                )
+                if float(retry_backoff_sec) > 0:
+                    time.sleep(float(retry_backoff_sec))
 
         row = dict(task)
         row.update(
             {
                 "seed": int(task.get("seed", 0)),
                 "eval_ok": metrics is not None and return_code == 0,
+                "attempts_used": int(attempts_used),
                 "return_code": return_code,
                 "duration_sec": duration,
                 "error": err_text,
@@ -838,7 +879,16 @@ def main():
     )
     parser.add_argument("--dry_run", action="store_true", help="Only print/save plan, do not execute evaluation")
     parser.add_argument("--confirm", action="store_true", help="Ask confirmation before execution")
-    parser.add_argument("--timeout_sec", type=int, default=0, help="Timeout per DEF subprocess (0 for no timeout)")
+    parser.add_argument("--timeout_sec", type=int, default=3600, help="Timeout per DEF subprocess in seconds (default: 3600)")
+    parser.add_argument("--max_retries", type=int, default=1, help="Retry count after the first attempt (default: 1)")
+    parser.add_argument("--retry_backoff_sec", type=float, default=10.0, help="Backoff seconds between retries")
+    parser.add_argument(
+        "--reuse_existing_results",
+        type=str,
+        default="true",
+        choices=["true", "false"],
+        help="Reuse prior metrics/logs when available and skip rerun",
+    )
     parser.add_argument(
         "--progress_style",
         type=str,
@@ -964,6 +1014,7 @@ def main():
         return
 
     timeout_sec = None if args.timeout_sec <= 0 else args.timeout_sec
+    reuse_existing_results = str(args.reuse_existing_results).lower() == "true"
     result_rows = []
     run_start = time.time()
     session_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -986,7 +1037,18 @@ def main():
                     f"algo={task['best_algo']} def#{task['def_rank']}"
                 )
 
-                row = run_single_task(task, workspace_root, args.platform, args.variant, timeout_sec, session_tag, args.cleanup_flow_work)
+                row = run_single_task(
+                    task,
+                    workspace_root,
+                    args.platform,
+                    args.variant,
+                    timeout_sec,
+                    session_tag,
+                    args.cleanup_flow_work,
+                    args.max_retries,
+                    args.retry_backoff_sec,
+                    reuse_existing_results,
+                )
                 result_rows.append(row)
                 print_result_row(row, task["benchmark"])
 
@@ -1009,6 +1071,9 @@ def main():
                         timeout_sec,
                         session_tag,
                         args.cleanup_flow_work,
+                        args.max_retries,
+                        args.retry_backoff_sec,
+                        reuse_existing_results,
                     ): t
                     for t in tasks
                 }

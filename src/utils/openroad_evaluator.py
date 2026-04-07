@@ -339,7 +339,18 @@ def parse_metrics_from_files(stdout_content, flow_work_home, orfs_root, platform
 
     return metrics
 
-def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, flow_work_home=None, cleanup_flow_work="success", resolve_only=False):
+def run_evaluation(
+    def_path,
+    design,
+    platform,
+    variant,
+    work_dir,
+    root_dir,
+    flow_work_home=None,
+    cleanup_flow_work="success",
+    resolve_only=False,
+    reuse_existing_logs=False,
+):
     start_time = time.time()
     orfs_root = get_orfs_root(root_dir)
     if not os.path.exists(orfs_root):
@@ -379,6 +390,33 @@ def run_evaluation(def_path, design, platform, variant, work_dir, root_dir, flow
             "design_name": design_name,
             "output_design": output_design,
         }
+
+    if reuse_existing_logs:
+        existing_metrics = parse_metrics_from_files(
+            "",
+            flow_work_home,
+            orfs_root,
+            platform,
+            output_design,
+            variant,
+        )
+        if any(
+            existing_metrics.get(k) is not None
+            for k in ["GRT_WL", "DRT_WL", "DRC", "WNS", "TNS", "Power", "StdCellArea"]
+        ):
+            existing_metrics["resolved_design_dir"] = config_design
+            existing_metrics["resolved_output_design"] = output_design
+            existing_metrics["flow_work_home"] = flow_work_home
+            print("[INFO] Reusing existing ORFS logs/reports and skipping make execution.")
+            print("\n=== Evaluation Results ===")
+            for k, v in existing_metrics.items():
+                print(f"{k}: {v}")
+            report_file = os.path.join(work_dir, "metrics.txt")
+            with open(report_file, "w") as rf:
+                for k, v in existing_metrics.items():
+                    rf.write(f"{k}: {v}\n")
+            print(f"Report saved to {report_file}")
+            return existing_metrics
 
     # Populate isolated WORK_HOME with synthesis seeds so run_wo_synth can start from floorplan.
     synth_seed_ok = seed_synth_artifacts(orfs_root, flow_work_home, platform, output_design, variant)
@@ -541,6 +579,11 @@ def main():
         choices=["never", "success", "always"],
         help="Cleanup isolated ORFS intermediates in flow_work_home",
     )
+    parser.add_argument(
+        "--reuse_existing_logs",
+        action="store_true",
+        help="If existing ORFS logs/reports are found, parse and skip rerun",
+    )
     parser.add_argument("--resolve_only", action="store_true", help="Only resolve design mapping, do not run make")
     
     args = parser.parse_args()
@@ -568,6 +611,7 @@ def main():
         flow_work_home=args.flow_work_home,
         cleanup_flow_work=args.cleanup_flow_work,
         resolve_only=args.resolve_only,
+        reuse_existing_logs=args.reuse_existing_logs,
     )
     if not result:
         sys.exit(1)
