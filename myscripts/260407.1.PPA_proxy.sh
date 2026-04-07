@@ -1,0 +1,3 @@
+ python3 src/utils/analyze_ppa_proxy.py --ppa_csv results/analysis_reports/ppa_eval/seeds_1_2_3/ppa_eval_seeds_1_2_3_gp_best.csv --hv_json results/analysis_reports/hv/json/hv_summary_seeds_1_2_3.json --output_dir results/analysis_reports/ppa_proxy/study_seeds_1_2_3 --benchmarks OpenROAD --formulations MGO,HPO --only_eval_ok --global_corr_mode design_mean
+
+  python3 src/utils/analyze_ppa_proxy.py --ppa_csv results/analysis_reports/ppa_eval/seeds_1_2_3/ppa_eval_seeds_1_2_3_gp_best.csv --hv_json results/analysis_reports/hv/json/hv_summary_seeds_1_2_3.json --output_dir results/analysis_reports/ppa_proxy/study_seeds_1_2_3 --benchmarks OpenROAD --formulations MGO,HPO --only_eval_ok --global_corr_mode design_weighted
