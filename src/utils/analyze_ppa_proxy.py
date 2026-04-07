@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 
-OPENROAD_PPA_METRICS = ["GRT_WL", "DRT_WL", "WNS", "TNS", "Power", "Area", "DRC"]
+OPENROAD_PPA_METRICS = ["GRT_WL", "DRT_WL", "WNS", "TNS", "DRC", "Power", "Area", ]
 ICCAD_PPA_METRICS = ["WNS", "TNS"]
 MAXIMIZE_METRICS = ["WNS", "TNS", "n_tns", "n_wns"]
 MINIMIZE_METRICS = ["GRT_WL", "DRT_WL", "Power", "Area", "DRC", "hpwl"]
@@ -684,6 +684,70 @@ def compute_proxy_ppa_correlation(proxy_long_df, ppa_metrics):
     return pd.DataFrame(rows)
 
 
+def compute_proxy_ppa_correlation_by_design(proxy_long_df, ppa_metrics, agg_mode="design_mean"):
+    if proxy_long_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    gcols = ["benchmark", "case"]
+    detail_rows = []
+    for keys, sub_d in proxy_long_df.groupby(gcols, dropna=False):
+        bench, case = keys
+        for pname, sub_p in sub_d.groupby("proxy_name"):
+            for m in ppa_metrics:
+                if m not in sub_p.columns:
+                    continue
+                sub = sub_p[["proxy_value", m]].dropna()
+                if len(sub) < 5:
+                    continue
+                detail_rows.append(
+                    {
+                        "benchmark": bench,
+                        "case": case,
+                        "proxy_name": pname,
+                        "ppa_metric": m,
+                        "n": int(len(sub)),
+                        "spearman": safe_corr(sub["proxy_value"], sub[m], "spearman"),
+                        "pearson": safe_corr(sub["proxy_value"], sub[m], "pearson"),
+                    }
+                )
+
+    detail_df = pd.DataFrame(detail_rows)
+    if detail_df.empty:
+        return detail_df, pd.DataFrame()
+
+    summary_rows = []
+    for keys, sub in detail_df.groupby(["proxy_name", "ppa_metric"], dropna=False):
+        pname, metric = keys
+        sub = sub[np.isfinite(sub["spearman"])].copy()
+        if sub.empty:
+            continue
+
+        if agg_mode == "design_weighted":
+            w = sub["n"].to_numpy(dtype=float)
+            s = sub["spearman"].to_numpy(dtype=float)
+            p = sub["pearson"].to_numpy(dtype=float)
+            spearman_aggr = float(np.sum(w * s) / np.sum(w)) if np.sum(w) > 0 else float(np.mean(s))
+            pearson_aggr = float(np.sum(w * p) / np.sum(w)) if np.sum(w) > 0 else float(np.mean(p))
+        else:
+            spearman_aggr = float(np.mean(sub["spearman"].to_numpy(dtype=float)))
+            pearson_aggr = float(np.mean(sub["pearson"].to_numpy(dtype=float)))
+
+        summary_rows.append(
+            {
+                "proxy_name": pname,
+                "ppa_metric": metric,
+                "n_designs": int(len(sub)),
+                "n_total": int(sub["n"].sum()),
+                "spearman": spearman_aggr,
+                "pearson": pearson_aggr,
+                "spearman_design_std": float(np.std(sub["spearman"].to_numpy(dtype=float), ddof=1)) if len(sub) > 1 else 0.0,
+            }
+        )
+
+    summary_df = pd.DataFrame(summary_rows)
+    return detail_df, summary_df
+
+
 def compute_groupwise_rank_consistency(proxy_long_df, ppa_metrics):
     rows = []
     if proxy_long_df.empty:
@@ -1045,6 +1109,102 @@ def make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, t
     save_dual(fig, fig_dir, "heatmap_all_metrics_spearman")
 
 
+def make_all_metrics_corr_heatmap_by_design(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir, metric_labels=None, agg_mode="design_mean"):
+    if proxy_long_df.empty:
+        return
+
+    merged_parts = []
+    gcols = ["benchmark", "case"]
+    for keys, sub_ppa in ppa_df.groupby(gcols, dropna=False):
+        bench, case = keys
+        sub_proxy = proxy_long_df[
+            (proxy_long_df["benchmark"].astype(str) == str(bench))
+            & (proxy_long_df["case"].astype(str) == str(case))
+        ]
+        if sub_proxy.empty:
+            continue
+
+        proxy_wide = sub_proxy.pivot_table(index="row_uid", columns="proxy_name", values="proxy_value", aggfunc="first")
+        ppa_wide = sub_ppa[["row_uid"] + ppa_metrics].drop_duplicates(subset=["row_uid"]).set_index("row_uid")
+        merged = proxy_wide.join(ppa_wide, how="inner")
+        if merged.empty:
+            continue
+
+        valid_cols = []
+        for c in merged.columns:
+            s = merged[c].dropna()
+            if len(s) >= 3 and s.nunique() > 1:
+                valid_cols.append(c)
+        if len(valid_cols) < 2:
+            continue
+        merged = merged[valid_cols]
+        merged_parts.append((bench, case, merged))
+
+    if not merged_parts:
+        return
+
+    all_proxy_cols = sorted(set().union(*[set(m.columns) for _, _, m in merged_parts]) - set(ppa_metrics))
+    all_ppa_cols = [c for c in ppa_metrics if any(c in m.columns for _, _, m in merged_parts)]
+    ordered = all_proxy_cols + all_ppa_cols
+    if not all_proxy_cols or not all_ppa_cols:
+        return
+
+    corr_stack = []
+    meta_rows = []
+    for bench, case, merged in merged_parts:
+        mat = merged.reindex(columns=ordered)
+        corr = mat.corr(method="spearman")
+        corr = corr.reindex(index=ordered, columns=ordered)
+        corr_stack.append(corr.to_numpy(dtype=float))
+        meta_rows.append({"benchmark": bench, "case": case, "n_rows": int(len(merged))})
+
+    arr3 = np.stack(corr_stack, axis=0)
+    if agg_mode == "design_weighted":
+        ws = np.asarray([max(1, int(x["n_rows"])) for x in meta_rows], dtype=float)
+        ws = ws / np.sum(ws)
+        corr_mean = np.tensordot(ws, arr3, axes=(0, 0))
+    else:
+        corr_mean = np.nanmean(arr3, axis=0)
+    np.fill_diagonal(corr_mean, np.nan)
+
+    corr_plot = pd.DataFrame(corr_mean, index=ordered, columns=ordered)
+    corr_plot.to_csv(os.path.join(tab_dir, "all_metrics_spearman_corr.csv"), index=True)
+
+    pd.DataFrame(meta_rows).to_csv(os.path.join(tab_dir, "all_metrics_spearman_corr_design_groups.csv"), index=False)
+
+    arr = corr_plot.to_numpy(dtype=float)
+    cmap = plt.get_cmap("coolwarm").copy()
+    cmap.set_bad(color="white")
+
+    display_order = []
+    for c in ordered:
+        if c in all_ppa_cols:
+            display_order.append(metric_label(c, metric_labels))
+        else:
+            display_order.append(c)
+
+    fig, ax = plt.subplots(figsize=(0.56 * len(ordered) + 3.0, 0.56 * len(ordered) + 2.8))
+    im = ax.imshow(arr, cmap=cmap, vmin=-1.0, vmax=1.0, aspect="equal")
+    ax.set_xticks(np.arange(len(ordered)))
+    ax.set_xticklabels(display_order, rotation=65, ha="right", fontsize=8)
+    ax.set_yticks(np.arange(len(ordered)))
+    ax.set_yticklabels(display_order, fontsize=8)
+    ax.set_title("All-Metrics Spearman Correlation (Design-Aggregated)")
+
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            v = arr[i, j]
+            if np.isfinite(v):
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=8, color="black")
+
+    boundary = len(all_proxy_cols) - 0.5
+    ax.axvline(boundary, color="black", linewidth=2.0)
+    ax.axhline(boundary, color="black", linewidth=2.0)
+
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    save_dual(fig, fig_dir, "heatmap_all_metrics_spearman")
+
+
 def write_report(report_path, args, ppa_df, ppa_metrics, summary_df, hv_corr_df, improve_df, proxy_corr_df, rank_df, hit_summary_df, catalog_df):
     lines = []
     lines.append("# PPA and Proxy Objective Joint Analysis Report")
@@ -1074,9 +1234,17 @@ def write_report(report_path, args, ppa_df, ppa_metrics, summary_df, hv_corr_df,
 
     if not proxy_corr_df.empty:
         top2 = proxy_corr_df.iloc[proxy_corr_df["spearman"].abs().values.argmax()]
+        if "n" in proxy_corr_df.columns:
+            n_text = f"n={int(top2['n'])}"
+        elif "n_total" in proxy_corr_df.columns and "n_designs" in proxy_corr_df.columns:
+            n_text = f"n_total={int(top2['n_total'])}, n_designs={int(top2['n_designs'])}"
+        elif "n_total" in proxy_corr_df.columns:
+            n_text = f"n_total={int(top2['n_total'])}"
+        else:
+            n_text = "n=NA"
         lines.append(
             f"- Strongest proxy-object-vs-PPA relation: {top2['proxy_name']} vs {top2['ppa_metric']} "
-            f"(|spearman|={abs(top2['spearman']):.3f}, n={int(top2['n'])})."
+            f"(|spearman|={abs(top2['spearman']):.3f}, {n_text})."
         )
     else:
         lines.append("- Proxy-object-vs-PPA relation could not be computed.")
@@ -1136,6 +1304,7 @@ def write_report(report_path, args, ppa_df, ppa_metrics, summary_df, hv_corr_df,
     lines.append("- proxy 与 DEF 的映射使用 def_rank -> final_solutions[def_rank-1]。")
     lines.append("- 指标方向统一：分析阶段将 WNS/TNS 映射为 -WNS/-TNS，与其余指标统一为“越小越好”口径。")
     lines.append("- 当当前 PPA CSV 仅覆盖 GP（如 OpenROAD GP）时，MP 仅参与 proxy-object catalog，不参与 proxy↔PPA 直接相关。")
+    lines.append(f"- 全局相关性聚合方式：{getattr(args, 'global_corr_mode', 'design_mean')}（先按 design 计算，再聚合）。")
 
     with open(report_path, "w") as f:
         f.write("\n".join(lines))
@@ -1171,7 +1340,15 @@ def run_analysis_bundle(ppa_df, hv_df, args, output_dir, scope_title="overall"):
     summary_df = summarize_by_group(ppa_df, ppa_metrics)
     hv_corr_df = compute_hv_metric_correlation(summary_df, ppa_metrics)
     improve_df = compare_hpo_mgo(summary_df, ppa_metrics)
-    proxy_corr_df = compute_proxy_ppa_correlation(proxy_long_df, ppa_metrics)
+    if scope_title == "overall":
+        proxy_corr_detail_df, proxy_corr_df = compute_proxy_ppa_correlation_by_design(
+            proxy_long_df,
+            ppa_metrics,
+            agg_mode=getattr(args, "global_corr_mode", "design_mean"),
+        )
+    else:
+        proxy_corr_df = compute_proxy_ppa_correlation(proxy_long_df, ppa_metrics)
+        proxy_corr_detail_df = pd.DataFrame()
     rank_df = compute_groupwise_rank_consistency(proxy_long_df, ppa_metrics)
     hit_detail_df, hit_summary_df = compute_top1_hit_rate(proxy_long_df, ppa_metrics)
 
@@ -1202,6 +1379,8 @@ def run_analysis_bundle(ppa_df, hv_df, args, output_dir, scope_title="overall"):
     save_df(hv_corr_df, os.path.join(tab_dir, "hv_metric_correlation.csv"), os.path.join(tab_dir, "hv_metric_correlation.tex"))
     save_df(improve_df, os.path.join(tab_dir, "hpo_vs_mgo_improvement.csv"), os.path.join(tab_dir, "hpo_vs_mgo_improvement.tex"))
     save_df(proxy_corr_df, os.path.join(tab_dir, "proxy_metric_correlation.csv"), os.path.join(tab_dir, "proxy_metric_correlation.tex"))
+    if not proxy_corr_detail_df.empty:
+        proxy_corr_detail_df.to_csv(os.path.join(tab_dir, "proxy_metric_correlation_by_design_detail.csv"), index=False)
     save_df(rank_df, os.path.join(tab_dir, "proxy_groupwise_rank_consistency.csv"), os.path.join(tab_dir, "proxy_groupwise_rank_consistency.tex"))
     save_df(hit_summary_df, os.path.join(tab_dir, "proxy_top1_hit_rate.csv"), os.path.join(tab_dir, "proxy_top1_hit_rate.tex"))
 
@@ -1235,7 +1414,18 @@ def run_analysis_bundle(ppa_df, hv_df, args, output_dir, scope_title="overall"):
     make_rank_consistency_heatmap(rank_df, fig_dir)
     make_top1_hit_bar(hit_summary_df, fig_dir)
     make_proxy_mode_dim_bar(catalog_df, fig_dir)
-    make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir, metric_labels=metric_labels)
+    if scope_title == "overall":
+        make_all_metrics_corr_heatmap_by_design(
+            ppa_df,
+            proxy_long_df,
+            ppa_metrics,
+            fig_dir,
+            tab_dir,
+            metric_labels=metric_labels,
+            agg_mode=getattr(args, "global_corr_mode", "design_mean"),
+        )
+    else:
+        make_all_metrics_corr_heatmap(ppa_df, proxy_long_df, ppa_metrics, fig_dir, tab_dir, metric_labels=metric_labels)
 
     report_args = argparse.Namespace(ppa_csv=args.ppa_csv, hv_json=args.hv_json, output_dir=output_dir)
     write_report(
@@ -1266,6 +1456,12 @@ def main():
     parser.add_argument("--cases", default="all", help="all or comma list")
     parser.add_argument("--formulations", default="MGO,HPO", help="Comma list")
     parser.add_argument("--only_eval_ok", action="store_true", help="Only keep eval_ok rows if available")
+    parser.add_argument(
+        "--global_corr_mode",
+        default="design_mean",
+        choices=["design_mean", "design_weighted"],
+        help="Aggregation mode for overall correlation tables/heatmaps",
+    )
     args = parser.parse_args()
 
     configure_style()
