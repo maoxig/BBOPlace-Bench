@@ -13,7 +13,8 @@ import pandas as pd
 OPENROAD_PPA_METRICS = ["GRT_WL", "DRT_WL", "WNS", "TNS", "DRC", "Power", "Area", ]
 ICCAD_PPA_METRICS = ["WNS", "TNS"]
 MAXIMIZE_METRICS = ["WNS", "TNS", "n_tns", "n_wns"]
-MINIMIZE_METRICS = ["GRT_WL", "DRT_WL", "Power", "Area", "DRC", "hpwl"]
+MINIMIZE_METRICS = ["GRT_WL", "DRT_WL", "DRC", "Power", "Area", "hpwl"]
+VALID_MODES = ["GP", "MP"]
 
 
 def ensure_dir(path):
@@ -40,6 +41,33 @@ def parse_filters(csv_text):
     if csv_text is None or csv_text.strip() == "" or csv_text.strip().lower() == "all":
         return None
     return [x.strip() for x in csv_text.split(",") if x.strip()]
+
+
+def parse_modes(mode_text):
+    if mode_text is None or str(mode_text).strip() == "":
+        return ["GP"]
+    if str(mode_text).strip().lower() == "all":
+        return list(VALID_MODES)
+    items = [x.strip().upper() for x in str(mode_text).split(",") if x.strip()]
+    if not items:
+        return ["GP"]
+    out = []
+    for m in items:
+        if m not in VALID_MODES:
+            raise ValueError(f"Unsupported mode '{m}', valid options: {VALID_MODES}")
+        if m not in out:
+            out.append(m)
+    return out
+
+
+def normalize_proxy_metric_name(name):
+    x = str(name).strip()
+    lx = x.lower()
+    if lx == "rudy2":
+        return "rudy"
+    if lx == "mp_rudy2":
+        return "mp_rudy"
+    return x
 
 
 def parse_seeds(seed_text):
@@ -99,9 +127,9 @@ def infer_metric_columns(df):
         "DRT_WL",
         "WNS",
         "TNS",
+        "DRC",
         "Power",
         "Area",
-        "DRC",
         "n_tns",
         "n_wns",
         "hpwl",
@@ -181,9 +209,9 @@ def normalize_metric_direction(df, metrics):
         "DRT_WL",
         "NEG_WNS",
         "NEG_TNS",
+        "DRC",
         "Power",
         "Area",
-        "DRC",
         "n_tns",
         "n_wns",
         "hpwl",
@@ -339,7 +367,7 @@ def read_metrics_current_labels(run_path):
         return []
     try:
         mdf = pd.read_csv(metrics_path, nrows=1)
-        labels = [c[len("current_") :] for c in mdf.columns if c.startswith("current_")]
+        labels = [normalize_proxy_metric_name(c[len("current_") :]) for c in mdf.columns if c.startswith("current_")]
         return labels
     except Exception:
         return []
@@ -1455,6 +1483,7 @@ def main():
     parser.add_argument("--benchmarks", default="all", help="all or comma list")
     parser.add_argument("--cases", default="all", help="all or comma list")
     parser.add_argument("--formulations", default="MGO,HPO", help="Comma list")
+    parser.add_argument("--modes", default="GP", help="Comma list from GP,MP (default: GP)")
     parser.add_argument("--only_eval_ok", action="store_true", help="Only keep eval_ok rows if available")
     parser.add_argument(
         "--global_corr_mode",
@@ -1464,6 +1493,16 @@ def main():
     )
     args = parser.parse_args()
 
+    mode_filter = parse_modes(args.modes)
+    mode_tag = "_".join([m.lower() for m in mode_filter])
+
+    # Avoid accidentally overwriting existing GP analysis outputs when running MP or mixed modes.
+    if mode_tag != "gp":
+        base_name = os.path.basename(os.path.normpath(args.output_dir)).lower()
+        if f"mode_{mode_tag}" not in base_name and mode_tag not in base_name:
+            args.output_dir = f"{args.output_dir}_{mode_tag}"
+            print(f"[INFO] output_dir adjusted to avoid overwrite: {args.output_dir}")
+
     configure_style()
     ensure_dir(args.output_dir)
 
@@ -1472,8 +1511,22 @@ def main():
     if args.hv_json:
         hv_df = load_hv_table_all_modes(args.hv_json)
         if not hv_df.empty:
-            gp_hv = hv_df[hv_df["mode"] == "GP"].drop(columns=["mode"])
-            ppa_df = ppa_df.merge(gp_hv, on=["benchmark", "case", "formulation", "run_path"], how="left", suffixes=("", "_hvjson"))
+            hv_sel = hv_df[hv_df["mode"].astype(str).str.upper().isin(mode_filter)].copy()
+            if "mode" in ppa_df.columns:
+                ppa_df = ppa_df.merge(
+                    hv_sel,
+                    on=["benchmark", "case", "formulation", "run_path", "mode"],
+                    how="left",
+                    suffixes=("", "_hvjson"),
+                )
+            else:
+                hv_sel_drop_mode = hv_sel.drop(columns=["mode"], errors="ignore")
+                ppa_df = ppa_df.merge(
+                    hv_sel_drop_mode,
+                    on=["benchmark", "case", "formulation", "run_path"],
+                    how="left",
+                    suffixes=("", "_hvjson"),
+                )
 
             if "best_hv" not in ppa_df.columns and "best_hv_hvjson" in ppa_df.columns:
                 ppa_df["best_hv"] = ppa_df["best_hv_hvjson"]
@@ -1497,6 +1550,8 @@ def main():
         ppa_df = ppa_df[ppa_df["case"].isin(case_filter)]
     if form_filter is not None and "formulation" in ppa_df.columns:
         ppa_df = ppa_df[ppa_df["formulation"].isin(form_filter)]
+    if "mode" in ppa_df.columns:
+        ppa_df = ppa_df[ppa_df["mode"].astype(str).str.upper().isin(mode_filter)]
     if args.only_eval_ok and "eval_ok" in ppa_df.columns:
         ppa_df = ppa_df[ppa_df["eval_ok"].astype(bool)]
 

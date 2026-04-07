@@ -45,6 +45,7 @@ BENCHMARKS = {
 }
 
 FORMULATIONS = ["MGO", "HPO"]
+MODES = ["GP", "MP"]
 DEFAULT_DEF_PER_SEED = 5
 
 
@@ -132,6 +133,10 @@ def seed_tag(seeds):
     return "_".join([str(int(s)) for s in seeds])
 
 
+def modes_tag(modes):
+    return "_".join([str(m).strip().lower() for m in modes])
+
+
 def normalize_run_path(workspace_root, run_path):
     if not run_path:
         return run_path
@@ -216,18 +221,21 @@ def load_hv_summary(summary_json, seed=None, seeds=None):
     return data
 
 
-def find_def_candidates(run_path, def_per_seed):
+def find_def_candidates(run_path, def_per_seed, mode="GP"):
     placements_dir = os.path.join(run_path, "placements")
     if not os.path.isdir(placements_dir):
         return []
 
+    mode_upper = str(mode).upper()
+    preferred_prefix = "gp" if mode_upper == "GP" else "mp"
+
     selected = []
     for i in range(1, int(def_per_seed) + 1):
-        gp_def = os.path.join(placements_dir, f"gp_{i}.def")
+        preferred_def = os.path.join(placements_dir, f"{preferred_prefix}_{i}.def")
         base_def = os.path.join(placements_dir, f"{i}.def")
 
-        if os.path.exists(gp_def):
-            selected.append((i, gp_def, True))
+        if os.path.exists(preferred_def):
+            selected.append((i, preferred_def, True))
         elif os.path.exists(base_def):
             selected.append((i, base_def, False))
 
@@ -420,13 +428,13 @@ def find_reusable_openroad_metrics(run_path, def_path):
     return None
 
 
-def write_partial_results(output_dir, seeds, multi_seed, result_rows):
+def write_partial_results(output_dir, seeds, multi_seed, result_rows, mode_tag):
     if multi_seed:
-        json_path = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.partial.json")
-        csv_path = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.partial.csv")
+        json_path = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_{mode_tag}_best.partial.json")
+        csv_path = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_{mode_tag}_best.partial.csv")
     else:
-        json_path = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.partial.json")
-        csv_path = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.partial.csv")
+        json_path = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_{mode_tag}_best.partial.json")
+        csv_path = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_{mode_tag}_best.partial.csv")
 
     payload = {
         "generated_at": datetime.now().isoformat(),
@@ -720,6 +728,7 @@ def print_log_line(line, compact=False):
 
 def build_task_plan(
     hv_summary,
+    selected_modes,
     selected_benchmarks,
     selected_formulations,
     benchmark_case_filters,
@@ -737,92 +746,94 @@ def build_task_plan(
             continue
 
         bench_data = hv_summary.get("benchmarks", {}).get(benchmark, {})
-        gp_data = bench_data.get("modes", {}).get("GP", {})
-        gp_cases = gp_data.get("cases", {})
         case_filter = benchmark_case_filters.get(benchmark)
 
-        for case_name in bench_cfg["cases"]:
-            if case_filter is not None and case_name not in case_filter:
-                continue
+        for mode_name in selected_modes:
+            mode_data = bench_data.get("modes", {}).get(mode_name, {})
+            mode_cases = mode_data.get("cases", {})
 
-            case_data = gp_cases.get(case_name, {})
-            for form in FORMULATIONS:
-                if selected_formulations is not None and form not in selected_formulations:
+            for case_name in bench_cfg["cases"]:
+                if case_filter is not None and case_name not in case_filter:
                     continue
 
-                form_data = case_data.get(form, {})
-                setting_candidates = []
-                if multi_seed:
-                    best_algo = form_data.get("best_algo_by_mean")
-                    if not best_algo:
+                case_data = mode_cases.get(case_name, {})
+                for form in FORMULATIONS:
+                    if selected_formulations is not None and form not in selected_formulations:
                         continue
 
-                    algo_data = form_data.get("algorithms", {}).get(best_algo, {})
-                    hv_stats = algo_data.get("hv_stats") or {}
-                    hv_mean = hv_stats.get("mean")
-                    hv_by_seed = algo_data.get("hv_by_seed") or {}
-                    run_path_by_seed = algo_data.get("run_path_by_seed") or {}
-
-                    for seed in seeds:
-                        run_path = normalize_run_path(workspace_root, run_path_by_seed.get(str(seed)))
-                        if not run_path:
+                    form_data = case_data.get(form, {})
+                    setting_candidates = []
+                    if multi_seed:
+                        best_algo = form_data.get("best_algo_by_mean")
+                        if not best_algo:
                             continue
-                        def_list = find_def_candidates(run_path, def_per_seed)
+
+                        algo_data = form_data.get("algorithms", {}).get(best_algo, {})
+                        hv_stats = algo_data.get("hv_stats") or {}
+                        hv_mean = hv_stats.get("mean")
+                        hv_by_seed = algo_data.get("hv_by_seed") or {}
+                        run_path_by_seed = algo_data.get("run_path_by_seed") or {}
+
+                        for seed in seeds:
+                            run_path = normalize_run_path(workspace_root, run_path_by_seed.get(str(seed)))
+                            if not run_path:
+                                continue
+                            def_list = find_def_candidates(run_path, def_per_seed, mode=mode_name)
+                            if not def_list:
+                                continue
+
+                            for rank, def_path, used_pref in def_list:
+                                setting_candidates.append(
+                                    {
+                                        "seed": int(seed),
+                                        "benchmark": benchmark,
+                                        "case": case_name,
+                                        "formulation": form,
+                                        "mode": mode_name,
+                                        "best_algo": best_algo,
+                                        "best_hv": hv_by_seed.get(str(seed)),
+                                        "best_hv_mean": hv_mean,
+                                        "run_path": run_path,
+                                        "def_rank": rank,
+                                        "def_path": def_path,
+                                        "used_mode_def": used_pref,
+                                    }
+                                )
+                    else:
+                        best_algo = form_data.get("best_algo")
+                        best_hv = form_data.get("best_hv")
+                        best_run_path = normalize_run_path(workspace_root, form_data.get("best_run_path"))
+
+                        if not best_algo or not best_run_path:
+                            continue
+
+                        def_list = find_def_candidates(best_run_path, def_per_seed, mode=mode_name)
                         if not def_list:
                             continue
 
-                        for rank, def_path, used_gp in def_list:
+                        for rank, def_path, used_pref in def_list:
                             setting_candidates.append(
                                 {
-                                    "seed": int(seed),
+                                    "seed": int(seeds[0]),
                                     "benchmark": benchmark,
                                     "case": case_name,
                                     "formulation": form,
-                                    "mode": "GP",
+                                    "mode": mode_name,
                                     "best_algo": best_algo,
-                                    "best_hv": hv_by_seed.get(str(seed)),
-                                    "best_hv_mean": hv_mean,
-                                    "run_path": run_path,
+                                    "best_hv": best_hv,
+                                    "run_path": best_run_path,
                                     "def_rank": rank,
                                     "def_path": def_path,
-                                    "used_gp_def": used_gp,
+                                    "used_mode_def": used_pref,
                                 }
                             )
-                else:
-                    best_algo = form_data.get("best_algo")
-                    best_hv = form_data.get("best_hv")
-                    best_run_path = normalize_run_path(workspace_root, form_data.get("best_run_path"))
 
-                    if not best_algo or not best_run_path:
-                        continue
-
-                    def_list = find_def_candidates(best_run_path, def_per_seed)
-                    if not def_list:
-                        continue
-
-                    for rank, def_path, used_gp in def_list:
-                        setting_candidates.append(
-                            {
-                                "seed": int(seeds[0]),
-                                "benchmark": benchmark,
-                                "case": case_name,
-                                "formulation": form,
-                                "mode": "GP",
-                                "best_algo": best_algo,
-                                "best_hv": best_hv,
-                                "run_path": best_run_path,
-                                "def_rank": rank,
-                                "def_path": def_path,
-                                "used_gp_def": used_gp,
-                            }
-                        )
-
-                selected_candidates = select_task_candidates(
-                    candidates=setting_candidates,
-                    max_total_defs_per_setting=max_total_defs_per_setting,
-                    def_select_strategy=def_select_strategy,
-                )
-                tasks.extend(selected_candidates)
+                    selected_candidates = select_task_candidates(
+                        candidates=setting_candidates,
+                        max_total_defs_per_setting=max_total_defs_per_setting,
+                        def_select_strategy=def_select_strategy,
+                    )
+                    tasks.extend(selected_candidates)
 
     return tasks
 
@@ -868,10 +879,10 @@ def print_plan(tasks, preview_limit, estimate_per_def_min):
 
     print("\nPreview:")
     for idx, t in enumerate(tasks[:preview_limit], 1):
-        gp_flag = "gp" if t["used_gp_def"] else "base"
+        mode_flag = str(t.get("mode", "GP")).lower() if t.get("used_mode_def") else "base"
         print(
-            f"  [{idx}] seed={t['seed']} {t['benchmark']}/{t['case']}/{t['formulation']} "
-            f"best={t['best_algo']} hv={t['best_hv']} def#{t['def_rank']}({gp_flag})"
+            f"  [{idx}] seed={t['seed']} {t['benchmark']}/{t['case']}/{t['formulation']}/{t.get('mode','GP')} "
+            f"best={t['best_algo']} hv={t['best_hv']} def#{t['def_rank']}({mode_flag})"
         )
     if len(tasks) > preview_limit:
         print(f"  ... {len(tasks) - preview_limit} more tasks")
@@ -879,7 +890,7 @@ def print_plan(tasks, preview_limit, estimate_per_def_min):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate GP PPA for best-HV algorithm per case/formulation (subprocess mode)"
+        description="Evaluate mode-specific PPA for best-HV algorithm per case/formulation (subprocess mode)"
     )
     parser.add_argument("--workspace", type=str, default=".", help="Workspace root")
     parser.add_argument(
@@ -904,6 +915,7 @@ def main():
     parser.add_argument("--iccad_cases", type=str, default="all", help="ICCAD2015-only cases, e.g. superblue1")
     parser.add_argument("--openroad_cases", type=str, default="all", help="OpenROAD-only cases, e.g. bp,bp_fe")
     parser.add_argument("--formulations", type=str, default="all", help="all or comma list: MGO,HPO")
+    parser.add_argument("--modes", type=str, default="GP", help="Comma list from GP,MP (default: GP)")
 
     parser.add_argument("--preview_limit", type=int, default=30, help="How many planned tasks to print")
     parser.add_argument("--jobs", type=int, default=1, help="Parallel worker count for PPA evaluation")
@@ -989,12 +1001,17 @@ def main():
 
     selected_benchmarks = parse_csv_or_all(args.benchmarks, valid_values=list(BENCHMARKS.keys()))
     selected_formulations = parse_csv_or_all(args.formulations, valid_values=FORMULATIONS)
+    selected_modes = parse_csv_or_all(args.modes, valid_values=MODES)
+    if selected_modes is None:
+        selected_modes = ["GP", "MP"]
     common_cases_filter, benchmark_case_filters = parse_case_filters(args)
+    mode_tag_text = modes_tag(selected_modes)
 
     hv_summary = load_hv_summary(hv_json, seed=seeds[0], seeds=seeds if multi_seed else None)
     max_total_defs = None if int(args.max_total_defs_per_setting) <= 0 else int(args.max_total_defs_per_setting)
     tasks = build_task_plan(
         hv_summary,
+        selected_modes,
         selected_benchmarks,
         selected_formulations,
         benchmark_case_filters,
@@ -1008,9 +1025,9 @@ def main():
     tasks = apply_task_sharding(tasks, args.num_shards, args.shard_id)
 
     if multi_seed:
-        plan_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best_plan.json")
+        plan_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_{mode_tag_text}_best_plan.json")
     else:
-        plan_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best_plan.json")
+        plan_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_{mode_tag_text}_best_plan.json")
     with open(plan_out, "w") as f:
         json.dump(
             {
@@ -1035,6 +1052,7 @@ def main():
                     "OpenROAD": benchmark_case_filters["OpenROAD"],
                 },
                 "formulations_filter": args.formulations,
+                "modes_filter": selected_modes,
                 "n_tasks": len(tasks),
                 "n_tasks_before_sharding": len(all_tasks),
                 "num_shards": int(args.num_shards),
@@ -1091,7 +1109,7 @@ def main():
             for idx, task in enumerate(tasks, 1):
                 print(
                     f"\n[RUN {idx}/{len(tasks)}] {task['benchmark']}/{task['case']}/{task['formulation']} "
-                    f"algo={task['best_algo']} def#{task['def_rank']}"
+                    f"mode={task.get('mode','GP')} algo={task['best_algo']} def#{task['def_rank']}"
                 )
 
                 row = run_single_task(
@@ -1107,7 +1125,7 @@ def main():
                     reuse_existing_results,
                 )
                 result_rows.append(row)
-                write_partial_results(output_dir, seeds, multi_seed, result_rows)
+                write_partial_results(output_dir, seeds, multi_seed, result_rows, mode_tag_text)
                 print_result_row(row, task["benchmark"])
 
                 elapsed = time.time() - run_start
@@ -1144,7 +1162,7 @@ def main():
                     for idx, t in enumerate(tasks, 1):
                         print(
                             f"[SUBMIT {idx}/{len(tasks)}] seed={t['seed']} {t['benchmark']}/{t['case']}/{t['formulation']} "
-                            f"def#{t['def_rank']}"
+                            f"mode={t.get('mode','GP')} def#{t['def_rank']}"
                         )
                 done = 0
                 pending = set(future_to_task.keys())
@@ -1201,7 +1219,7 @@ def main():
                                 }
                             )
                         result_rows.append(row)
-                        write_partial_results(output_dir, seeds, multi_seed, result_rows)
+                        write_partial_results(output_dir, seeds, multi_seed, result_rows, mode_tag_text)
 
                         if compact_progress and live_active:
                             _clear_live_line()
@@ -1210,7 +1228,7 @@ def main():
 
                         print(
                             f"\n[DONE {done}/{len(tasks)}] seed={task['seed']} {task['benchmark']}/{task['case']}/{task['formulation']} "
-                            f"def#{task['def_rank']} ok={row.get('eval_ok')}"
+                            f"mode={task.get('mode','GP')} def#{task['def_rank']} ok={row.get('eval_ok')}"
                         )
                         print_result_row(row, task["benchmark"])
 
@@ -1262,17 +1280,17 @@ def main():
     }
 
     if multi_seed:
-        json_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.json")
+        json_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_{mode_tag_text}_best.json")
     else:
-        json_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.json")
+        json_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_{mode_tag_text}_best.json")
     with open(json_out, "w") as f:
         json.dump(final, f, indent=2)
 
     result_df = pd.DataFrame(result_rows)
     if multi_seed:
-        csv_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.csv")
+        csv_out = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_{mode_tag_text}_best.csv")
     else:
-        csv_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.csv")
+        csv_out = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_{mode_tag_text}_best.csv")
     result_df.to_csv(csv_out, index=False)
 
     if multi_seed and not result_df.empty:
@@ -1280,7 +1298,7 @@ def main():
             sub = result_df[result_df["seed"] == int(seed)].copy()
             if sub.empty:
                 continue
-            seed_out = os.path.join(output_dir, f"ppa_eval_seed_{int(seed)}_gp_best.csv")
+            seed_out = os.path.join(output_dir, f"ppa_eval_seed_{int(seed)}_{mode_tag_text}_best.csv")
             sub.to_csv(seed_out, index=False)
 
     ok_count = sum(1 for r in result_rows if r.get("eval_ok"))
