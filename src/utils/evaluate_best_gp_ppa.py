@@ -393,6 +393,52 @@ def parse_openroad_output(stdout, work_dir, min_mtime=None):
     return metrics if metrics else None
 
 
+def find_reusable_openroad_metrics(run_path, def_path):
+    def_stem = os.path.basename(str(def_path)).replace(".def", "")
+    base = os.path.join(str(run_path), "ppa_eval")
+    if not os.path.isdir(base):
+        return None
+
+    candidates = []
+    for session in os.listdir(base):
+        metrics_file = os.path.join(base, session, def_stem, "metrics.txt")
+        if os.path.isfile(metrics_file):
+            try:
+                mtime = os.path.getmtime(metrics_file)
+            except Exception:
+                mtime = 0.0
+            candidates.append((mtime, os.path.dirname(metrics_file)))
+
+    if not candidates:
+        return None
+
+    candidates.sort(reverse=True)
+    for _, work_dir in candidates:
+        cached = parse_openroad_output("", work_dir, min_mtime=None)
+        if cached is not None:
+            return cached
+    return None
+
+
+def write_partial_results(output_dir, seeds, multi_seed, result_rows):
+    if multi_seed:
+        json_path = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.partial.json")
+        csv_path = os.path.join(output_dir, f"ppa_eval_seeds_{seed_tag(seeds)}_gp_best.partial.csv")
+    else:
+        json_path = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.partial.json")
+        csv_path = os.path.join(output_dir, f"ppa_eval_seed_{seeds[0]}_gp_best.partial.csv")
+
+    payload = {
+        "generated_at": datetime.now().isoformat(),
+        "n_rows": len(result_rows),
+        "rows": result_rows,
+    }
+    with open(json_path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+    pd.DataFrame(result_rows).to_csv(csv_path, index=False)
+
+
 def build_task_variant(task, base_variant):
     key = f"{task.get('seed')}|{task.get('benchmark')}|{task.get('case')}|{task.get('formulation')}|{task.get('def_path')}"
     h = hashlib.md5(key.encode("utf-8")).hexdigest()[:8]
@@ -410,6 +456,7 @@ def evaluate_one_def_subprocess(
     timeout_sec,
     cleanup_flow_work,
     reuse_existing_results,
+    run_path,
 ):
     start = time.time()
 
@@ -436,6 +483,15 @@ def evaluate_one_def_subprocess(
             cached = parse_openroad_output("", work_dir, min_mtime=None)
             if cached is not None:
                 return cached, "reused existing metrics", 0, 0.0
+        if reuse_existing_results:
+            cached = find_reusable_openroad_metrics(run_path, def_path)
+            if cached is not None:
+                # Persist into current session work dir for consistency.
+                metrics_file = os.path.join(work_dir, "metrics.txt")
+                with open(metrics_file, "w") as f:
+                    for k, v in cached.items():
+                        f.write(f"{k}: {v}\n")
+                return cached, "reused existing metrics from prior session", 0, 0.0
         cmd = [
             sys.executable,
             os.path.join(workspace_root, "src", "utils", "openroad_evaluator.py"),
@@ -576,6 +632,7 @@ def run_single_task(
                 timeout_sec=timeout_sec,
                 cleanup_flow_work=cleanup_flow_work,
                 reuse_existing_results=reuse_existing_results,
+                run_path=task["run_path"],
             )
             if metrics is not None and return_code == 0:
                 break
@@ -1050,6 +1107,7 @@ def main():
                     reuse_existing_results,
                 )
                 result_rows.append(row)
+                write_partial_results(output_dir, seeds, multi_seed, result_rows)
                 print_result_row(row, task["benchmark"])
 
                 elapsed = time.time() - run_start
@@ -1143,6 +1201,7 @@ def main():
                                 }
                             )
                         result_rows.append(row)
+                        write_partial_results(output_dir, seeds, multi_seed, result_rows)
 
                         if compact_progress and live_active:
                             _clear_live_line()
