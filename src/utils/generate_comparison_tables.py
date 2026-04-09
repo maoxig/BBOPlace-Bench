@@ -129,6 +129,15 @@ def get_hv_stats(hv_data, case, form, algo):
     return hv_data.get(case, {}).get(form, {}).get("algorithms", {}).get(algo, {}).get("hv_stats")
 
 
+def get_best_mean(hv_data, case, form):
+    means = []
+    for algo in ALGOS:
+        stats = get_hv_stats(hv_data, case, form, algo)
+        if isinstance(stats, dict) and stats.get("mean") is not None:
+            means.append(stats["mean"])
+    return max(means) if means else None
+
+
 def generate_markdown_table(benchmark_name, mode, hv_data):
     md_output = []
 
@@ -166,13 +175,18 @@ def generate_markdown_table_stats(benchmark_name, mode, hv_data):
     for case in cases:
         row_str = f"| {case} |"
         for form in FORMULATIONS:
+            best_mean = get_best_mean(hv_data, case, form)
             for algo in ALGOS:
                 stats = get_hv_stats(hv_data, case, form, algo)
-                if isinstance(stats, dict) and stats.get("mean") is not None:
+                if isinstance(stats, dict) and stats.get("mean") is not None and best_mean is not None and best_mean > 0:
                     mean_v = stats.get("mean")
                     std_v = stats.get("std", 0.0)
-                    n_v = stats.get("n", 0)
-                    row_str += f" {mean_v:.4e} ± {std_v:.2e} (n={n_v}) |"
+                    norm_mean = mean_v / best_mean
+                    norm_std = std_v / best_mean
+                    cell = f"{norm_mean:.2f} ± {norm_std:.2f}"
+                    if mean_v == best_mean:
+                        cell = f"<span style=\"color:#1f77b4;font-weight:600\">{cell}</span>"
+                    row_str += f" {cell} |"
                 else:
                     row_str += " - |"
         md_output.append(row_str)
@@ -239,9 +253,9 @@ def generate_latex_table(benchmark_name, mode, hv_data):
                 if isinstance(val, float):
                     base = val / (10 ** form_exponent)
                     tex_val = r"${:.2f} \times 10^{{{}}}$".format(base, form_exponent)
-                    # Only underline best. No second-best formatting.
+                    # Best value in blue for clearer visual emphasis.
                     if max_val is not None and val == max_val:
-                        tex_val = r"\underline{" + tex_val + r"}"
+                        tex_val = r"\textcolor{blue}{" + tex_val + r"}"
                     row_str += " & " + tex_val
                 else:
                     row_str += " & -"
@@ -263,7 +277,7 @@ def generate_latex_table_stats(benchmark_name, mode, hv_data):
     latex_output = []
     latex_output.append(r"\begin{table*}[t]")
     latex_output.append(r"\centering")
-    latex_output.append(r"\caption{Hypervolume Mean$\\pm$Std on " + benchmark_name + " (" + mode + r" Mode)}")
+    latex_output.append(r"\caption{Normalized Hypervolume on " + benchmark_name + " (" + mode + r" Mode): best mean in each (case, formulation) is scaled to 1.00, reported as ratio mean$\\pm$std across seeds.}")
     latex_output.append(r"\label{tab:" + benchmark_name.lower() + r"_" + mode.lower() + r"_mean_std}")
     latex_output.append(r"\resizebox{\textwidth}{!}{")
 
@@ -296,7 +310,7 @@ def generate_latex_table_stats(benchmark_name, mode, hv_data):
     for case in cases:
         row_str = case.replace("_", r"\_")
 
-        # underline best mean per formulation
+        # Normalize by best mean per formulation and highlight best in blue.
         for form in FORMULATIONS:
             means = []
             for algo in ALGOS:
@@ -307,12 +321,14 @@ def generate_latex_table_stats(benchmark_name, mode, hv_data):
 
             for algo in ALGOS:
                 st = get_hv_stats(hv_data, case, form, algo)
-                if isinstance(st, dict) and st.get("mean") is not None:
+                if isinstance(st, dict) and st.get("mean") is not None and best_mean is not None and best_mean > 0:
                     mean_v = st.get("mean")
                     std_v = st.get("std", 0.0)
-                    cell = r"${:.2e} \pm {:.1e}$".format(mean_v, std_v)
+                    norm_mean = mean_v / best_mean
+                    norm_std = std_v / best_mean
+                    cell = r"${:.2f} \pm {:.2f}$".format(norm_mean, norm_std)
                     if best_mean is not None and mean_v == best_mean:
-                        cell = r"\underline{" + cell + r"}"
+                        cell = r"\textcolor{blue}{" + cell + r"}"
                     row_str += " & " + cell
                 else:
                     row_str += " & -"
@@ -430,7 +446,11 @@ def analyze_benchmark_multi_seed(benchmark_name, output_dir, workspace_root, see
 
                     hv_results[case][form] = form_result
 
-            f.write(f"## {mode} Mode Results (Mean ± Std)\n\n")
+            f.write(f"## {mode} Mode Results (Normalized Mean ± Std)\n\n")
+            f.write(
+                "Note: Values are normalized within each (case, formulation) by the best mean HV across algorithms. "
+                "Best is shown as 1.00 and highlighted in blue; each cell is ratio mean±std over seeds.\n\n"
+            )
             table_md = generate_markdown_table_stats(benchmark_name, mode, hv_results)
             f.write(table_md)
             f.write("\n\n")
